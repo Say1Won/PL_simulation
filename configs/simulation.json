@@ -1,0 +1,43 @@
+{
+  "settings": {
+    "substrate": "GaN",
+    "temperature_k": 300.0,
+    "x_hkl": [0, 0, 1],
+    "y_hkl": [1, 0, 0],
+    "grid_spacing_nm": 0.1,
+    "electron_states": 4,
+    "hole_states": 12,
+    "electron_fermi_ev": 3.0,
+    "hole_fermi_ev": 0.0,
+    "spectrum_energy_min_ev": 2.0,
+    "spectrum_energy_max_ev": 4.0,
+    "spectrum_energy_step_ev": 0.002,
+    "broadening_ev": 0.01,
+    "include_strain": true,
+    "include_polarization": true
+  },
+  "output_files": {
+    "band_edges": {
+      "path": "bias_00000/bandedges.dat",
+      "coordinate": "x",
+      "conduction": "Gamma",
+      "valence": ["HH", "LH", "SO"],
+      "position_unit": "nm",
+      "energy_unit": "eV",
+      "energy_reference": "nextnano_global"
+    },
+    "spectrum": {
+      "path": "bias_00000/OpticsQuantum/single_qw/spont_emission_spectrum_photons_TEy_eV.dat",
+      "coordinate": 0,
+      "intensity": 0,
+      "axis_kind": "energy",
+      "axis_unit": "eV",
+      "intensity_unit": "photons/cm^2/s/eV",
+      "spectral_density": true,
+      "density_axis_unit": "eV",
+      "wavelength_intensity_unit": "photons/cm^2/s/nm",
+      "require_single_coordinate": true,
+      "require_single_variable": true
+    }
+  }
+}

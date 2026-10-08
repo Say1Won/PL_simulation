@@ -1,0 +1,25 @@
+{
+  "layers": [
+    {
+      "name": "left_barrier",
+      "material": "GaN",
+      "thickness_nm": 10.0,
+      "role": "barrier",
+      "indium_fraction": 0.0
+    },
+    {
+      "name": "well",
+      "material": "InGaN",
+      "thickness_nm": 3.0,
+      "role": "well",
+      "indium_fraction": 0.18
+    },
+    {
+      "name": "right_barrier",
+      "material": "GaN",
+      "thickness_nm": 10.0,
+      "role": "barrier",
+      "indium_fraction": 0.0
+    }
+  ]
+}

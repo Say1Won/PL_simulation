@@ -1,0 +1,18 @@
+# Generated solver inputs, results and figures
+/outputs/
+/work/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+# Local nextnano execution paths and licenses
+.nextnanopy-config
+*.lic
+license*.txt
+.DS_Store
+Thumbs.db

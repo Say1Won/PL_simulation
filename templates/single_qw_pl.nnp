@@ -1,0 +1,274 @@
+# InGaN/GaN single quantum well, nextnano++ 3.0.0 or newer.
+# Units: distance nm, energy eV, temperature K.
+# Model: prescribed electron/hole quasi-Fermi levels, self-consistent
+# Schrodinger-Poisson screening and independent-particle spontaneous emission.
+# No optical pump propagation, carrier capture kinetics, excitons, alloy
+# disorder, non-radiative loss, or diode current is calculated here.
+# The photon spectrum is for TEy polarization, not angle-integrated PL power.
+# Documentation used for this template:
+# https://www.nextnano.com/docu/nextnanoplus/latest/reference/keywords/global.html
+# https://www.nextnano.com/docu/nextnanoplus/latest/reference/keywords/contacts.html
+# https://www.nextnano.com/docu/nextnanoplus/latest/reference/keywords/currents/import_electron_fermi_level.html
+# https://www.nextnano.com/docu/nextnanoplus/latest/reference/keywords/quantum/region/kp_8band.html
+# https://www.nextnano.com/docu/nextnanoplus/latest/reference/keywords/optics/quantum_spectra.html
+# Photon-spectrum output naming:
+# https://www.nextnano.com/docu/nextnanoplus/latest/tutorials/quantum_well_photoluminescence_resonant.html
+
+$LEFT_BARRIER_THICKNESS = 10.0
+$WELL_THICKNESS = 3.0
+$RIGHT_BARRIER_THICKNESS = 10.0
+$LEFT_BARRIER_INDIUM = 0.0
+$WELL_INDIUM = 0.15
+$RIGHT_BARRIER_INDIUM = 0.0
+
+$TEMPERATURE = 300.0
+$GRID_SPACING = 0.2
+$ELECTRON_STATES = 4
+$HOLE_STATES = 12
+# Absolute solver energy reference (same reference as bandedges.dat).
+# These example values specify occupations; they are not laser power values.
+$ELECTRON_FERMI = 3.0
+$HOLE_FERMI = 0.0
+$ENERGY_MIN = 1.5
+$ENERGY_MAX = 4.0
+$ENERGY_STEP = 0.002
+# nextnano Gaussian broadening parameter, in eV.
+$BROADENING = 0.03
+$STRAIN_ENABLED = 1
+$POLARIZATION_ENABLED = 1
+# Wurtzite reduced three-index Miller planes, not four-index (h,k,i,l).
+# Their normals define simulation x (growth) and y axes.
+$X_H = 0
+$X_K = 0
+$X_L = 1
+$Y_H = 1
+$Y_K = 0
+$Y_L = 0
+
+# Advanced numerical/model defaults; increase for a convergence study.
+$K_RELATIVE_SIZE = 0.05
+$K_POINTS = 8
+$K_INTEGRATION_POINTS = 180
+$REFRACTIVE_INDEX = 2.5
+
+$WELL_START = $LEFT_BARRIER_THICKNESS
+$WELL_END = $LEFT_BARRIER_THICKNESS + $WELL_THICKNESS
+$TOTAL_THICKNESS = $WELL_END + $RIGHT_BARRIER_THICKNESS
+
+global{
+    simulate1D{}
+    crystal_wz{
+        x_hkl = [$X_H, $X_K, $X_L]
+        y_hkl = [$Y_H, $Y_K, $Y_L]
+    }
+    substrate{ name = "GaN" }
+    temperature = $TEMPERATURE
+}
+
+grid{
+    xgrid{
+        line{ pos = 0.0 spacing = $GRID_SPACING }
+        line{ pos = $WELL_START spacing = $GRID_SPACING }
+        line{ pos = $WELL_END spacing = $GRID_SPACING }
+        line{ pos = $TOTAL_THICKNESS spacing = $GRID_SPACING }
+    }
+}
+
+impurities{}
+
+# Selective Fermi constraints specify numerical occupations, not a p-n diode.
+# The solver convention is E_F [eV] = -bias [V]. No potential is fixed by these
+# constraints; the default exterior electrostatic conditions are zero field.
+contacts{
+    fermi_electron{
+        name = "electron_occupation"
+        bias = -$ELECTRON_FERMI
+    }
+    fermi_hole{
+        name = "hole_occupation"
+        bias = -$HOLE_FERMI
+    }
+}
+
+structure{
+    output_material_index{}
+    output_alloy_composition{}
+    output_contact_index{}
+    region{
+        everywhere{}
+        ternary_constant{
+            name = "In(x)Ga(1-x)N"
+            alloy_x = $LEFT_BARRIER_INDIUM
+        }
+    }
+    region{
+        line{ x = [$WELL_END, $TOTAL_THICKNESS] }
+        ternary_constant{
+            name = "In(x)Ga(1-x)N"
+            alloy_x = $RIGHT_BARRIER_INDIUM
+        }
+    }
+    region{
+        line{ x = [$WELL_START, $WELL_END] }
+        ternary_constant{
+            name = "In(x)Ga(1-x)N"
+            alloy_x = $WELL_INDIUM
+        }
+    }
+    region{
+        line{ x = [0.0, 0.0] }
+        contact{ name = "electron_occupation" }
+    }
+    region{
+        line{ x = [$TOTAL_THICKNESS, $TOTAL_THICKNESS] }
+        contact{ name = "hole_occupation" }
+    }
+}
+
+strain{
+    !IF($STRAIN_ENABLED)
+        pseudomorphic_strain{}
+        output_strain_tensor{}
+    !ELSE
+        no_strain{}
+    !ENDIF
+    !IF($POLARIZATION_ENABLED)
+        piezo_density = yes
+        pyro_density = yes
+    !ELSE
+        piezo_density = no
+        pyro_density = no
+    !ENDIF
+    output_polarization_charge{}
+}
+
+classical{
+    Gamma{}
+    HH{}
+    LH{}
+    SO{}
+    output_bandedges{
+        profiles = "Gamma HH LH SO electron_fermi_level hole_fermi_level"
+        averaged = no
+    }
+    output_carrier_densities{}
+}
+
+# Keep prescribed quasi-Fermi levels spatially constant. They are initialized
+# explicitly before Poisson/quantum calculations and no current solver runs.
+import{
+    analytic_function{
+        name = "electron_fermi_profile"
+        function = "$ELECTRON_FERMI + 0*x"
+    }
+    analytic_function{
+        name = "hole_fermi_profile"
+        function = "$HOLE_FERMI + 0*x"
+    }
+}
+
+currents{
+    import_electron_fermi_level{ import_from = "electron_fermi_profile" }
+    import_hole_fermi_level{ import_from = "hole_fermi_profile" }
+    recombination_model{
+        SRH = no
+        Auger = no
+        radiative = no
+    }
+    output_fermi_levels{}
+}
+
+poisson{
+    charge_neutral{}
+    bisection{
+        robust = yes
+    }
+    newton_solver{ iterations = 100 }
+    output_potential{}
+    output_electric_field{}
+}
+
+quantum{
+    region{
+        name = "single_qw"
+        x = [0.0, $TOTAL_THICKNESS]
+        no_density = no
+        boundary{ x = dirichlet }
+        # A unified Hamiltonian is required by quantum_spectra for interband
+        # transitions. Separate Gamma/HH quantum models are not used.
+        kp_8band{
+            num_electrons = $ELECTRON_STATES
+            num_holes = $HOLE_STATES
+            lapack{}
+            k_integration{
+                relative_size = $K_RELATIVE_SIZE
+                num_points = $K_POINTS
+                num_subpoints = 2
+                symmetry = none
+            }
+        }
+        output_states{
+            all_k_points = no
+            envelopes = yes
+            probabilities = yes
+            spinor_composition = yes
+            in_one_file = yes
+            energy_shift = not_shifted
+        }
+        transition_energies{
+            all_k_points = no
+            KP8{}
+        }
+        output_quantum_densities{}
+    }
+}
+
+optics{
+    quantum_spectra{
+        name = "single_qw"
+        interband = yes
+        intraband = no
+        enable_electron_hole = yes
+        enable_electron_electron = no
+        enable_hole_hole = no
+        occupation_ignore = no
+        occupation_zero_fermilevel = no
+        absorption = no
+        spontaneous_emission = yes
+        polarization{ name = "TEy" re = [0.0, 1.0, 0.0] }
+        refractive_index = $REFRACTIVE_INDEX
+        energy_min = $ENERGY_MIN
+        energy_max = $ENERGY_MAX
+        energy_resolution = $ENERGY_STEP
+        energy_broadening_gaussian = $BROADENING
+        k_integration{
+            relative_size = $K_RELATIVE_SIZE
+            num_points = $K_POINTS
+            num_integrationpoints = $K_INTEGRATION_POINTS
+        }
+        output_energies = yes
+        output_occupations = yes
+        output_spectra{
+            im_epsilon = no
+            absorption_coeff = no
+            re_epsilon = no
+            refractive_index = no
+            emission_photons = yes
+            emission_power = no
+            spectra_over_energy = yes
+            spectra_over_wavelength = yes
+        }
+    }
+}
+
+run{
+    strain{}
+    poisson{}
+    quantum_poisson{
+        iterations = 100
+        residual = 1e5
+        use_subspace = no
+        output_log = yes
+    }
+    quantum_optics{}
+}
