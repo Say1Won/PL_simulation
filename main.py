@@ -1,4 +1,4 @@
-"""Command-line entry point for the InGaN single-QW workflow."""
+"""Run a standalone effective-mass single-QW and relative PL calculation."""
 
 from __future__ import annotations
 
@@ -10,9 +10,10 @@ import sys
 from typing import Any
 
 from pl_simulation import (
-    NextnanoSimulation, PeakAnalyzer, QWResults, SimulationSettings,
+    PeakAnalyzer, QuantumWellSimulation, QWResults, SimulationSettings,
     SingleQWStructure,
 )
+from pl_simulation.material_parameters import load_materials
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -34,7 +35,7 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
 
 
 def allocate_run(output_root: Path) -> Path:
-    """Atomically reserve a new numbered run without overwriting old results."""
+    """Reserve a numbered directory without overwriting earlier runs."""
     output_root.mkdir(parents=True, exist_ok=True)
     for index in range(1, 1_000_000):
         candidate = output_root / f"run_{index:03d}"
@@ -48,19 +49,17 @@ def allocate_run(output_root: Path) -> Path:
 
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compute a single InGaN QW band diagram and PL spectrum using nextnano++."
+        description="Calculate a single QW and relative PL directly in Python; no external solver required."
     )
     parser.add_argument("--structure", type=Path, default=PROJECT_ROOT / "configs/single_qw.json")
     parser.add_argument("--settings", type=Path, default=PROJECT_ROOT / "configs/simulation.json")
-    parser.add_argument("--template", type=Path, default=PROJECT_ROOT / "templates/single_qw_pl.nnp")
-    parser.add_argument("--nextnano-config", type=Path, help="Existing nextnanopy .ini configuration.")
+    parser.add_argument("--materials", type=Path, default=PROJECT_ROOT / "configs/materials.json")
     parser.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "outputs")
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--prepare-only", action="store_true", help="Prepare inputs without starting a solver.")
-    mode.add_argument("--results-dir", type=Path, help="Analyze existing nextnano++ outputs without running a solver.")
-    parser.add_argument("--include-states", action="store_true", help="Overlay eigenstates from configured output mappings.")
-    parser.add_argument("--include-wavefunctions", action="store_true", help="Overlay wavefunctions from configured output mappings.")
-    parser.add_argument("--quiet", action="store_true", help="Do not stream the solver log.")
+    mode.add_argument("--prepare-only", action="store_true", help="Validate and snapshot inputs without calculation.")
+    mode.add_argument("--results-dir", type=Path, help="Reanalyze a native result.npz file/folder, or explicitly mapped legacy .dat outputs.")
+    parser.add_argument("--include-states", action="store_true", help="Overlay configured legacy states; native states are included by default.")
+    parser.add_argument("--include-wavefunctions", action="store_true", help="Overlay wavefunctions with arbitrary display scaling.")
     return parser.parse_args(argv)
 
 
@@ -70,55 +69,76 @@ def main(argv: list[str] | None = None) -> int:
     manifest: dict[str, Any] = {}
     try:
         structure = SingleQWStructure.from_dict(read_json(arguments.structure))
-        simulation_config = read_json(arguments.settings)
-        unknown = set(simulation_config) - {"settings", "output_files"}
+        configuration = read_json(arguments.settings)
+        unknown = set(configuration) - {"settings", "output_files"}
         if unknown:
             raise ValueError("Unknown simulation configuration keys: " + ", ".join(sorted(unknown)))
-        settings = SimulationSettings.from_dict(simulation_config["settings"])
-        mappings = simulation_config.get("output_files", {})
+        settings = SimulationSettings.from_dict(configuration["settings"])
+        materials = load_materials(arguments.materials)
+        mappings = configuration.get("output_files", {})
         if not isinstance(mappings, dict):
             raise ValueError("output_files must be a JSON object.")
-        if arguments.results_dir is not None and not arguments.results_dir.is_dir():
-            raise FileNotFoundError(f"Existing results directory not found: {arguments.results_dir}")
+        existing = None
+        if arguments.results_dir is not None:
+            existing = arguments.results_dir.expanduser().resolve()
+            if not existing.exists():
+                raise FileNotFoundError(f"Existing results not found: {existing}")
 
         run_directory = allocate_run(arguments.output_root.expanduser().resolve())
         snapshots = run_directory / "inputs"
         write_json(snapshots / "single_qw.json", structure.to_dict())
-        write_json(snapshots / "simulation.json", simulation_config)
+        write_json(snapshots / "simulation.json", configuration)
+        write_json(snapshots / "materials.json", materials)
         manifest = {
-            "status": "preparing",
+            "status": "prepared",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "excitation_model": "prescribed_quasi_fermi_levels",
+            "calculation_engine": "python_effective_mass",
+            "excitation_model": "prescribed_sheet_densities",
             "structure": structure.to_dict(),
             "settings": settings.to_dict(),
-            "output_files": mappings,
-            "solver_validation": "Required: run with a licensed nextnano++ 3.0+ installation.",
         }
         write_json(snapshots / "run.json", manifest)
+        if arguments.prepare_only:
+            print(f"Inputs prepared: {snapshots}")
+            print("No calculation was run. Remove --prepare-only to compute in Python.")
+            return 0
 
-        if arguments.results_dir is None:
-            simulation = NextnanoSimulation(arguments.template, arguments.nextnano_config)
-            simulation.load_template()
-            simulation.apply_parameters(structure, settings)
-            prepared_input = simulation.save_input(snapshots / "single_qw_pl.nnp")
-            manifest["input_file"] = str(prepared_input)
-            if arguments.prepare_only:
-                manifest["status"] = "prepared"
-                write_json(snapshots / "run.json", manifest)
-                print(f"Input prepared: {prepared_input}")
-                print("No physical simulation was run. Remove --prepare-only to execute nextnano++.")
-                return 0
+        native = True
+        if existing is None:
             manifest["status"] = "running"
             write_json(snapshots / "run.json", manifest)
-            source = simulation.run(run_directory / "nextnano", show_log=not arguments.quiet)
+            calculation = QuantumWellSimulation(structure, settings, materials).run()
+            calculation["metadata"].update({
+                "structure": structure.to_dict(), "settings": settings.to_dict(),
+                "materials": materials,
+            })
+            results = QWResults.from_calculation(calculation)
+            source = results.save_calculation(run_directory / "calculation/result.npz")
         else:
-            source = arguments.results_dir.expanduser().resolve()
+            source = existing / "result.npz" if existing.is_dir() else existing
+            if source.is_file() and source.suffix.lower() == ".npz":
+                results = QWResults.from_archive(source)
+                if "structure" in results.metadata:
+                    structure = SingleQWStructure.from_dict(results.metadata["structure"])
+                    manifest["structure"] = structure.to_dict()
+                    write_json(snapshots / "single_qw.json", structure.to_dict())
+                if "settings" in results.metadata:
+                    manifest["settings"] = results.metadata["settings"]
+                    write_json(snapshots / "simulation.json", {"settings": results.metadata["settings"]})
+                if "materials" in results.metadata:
+                    write_json(snapshots / "materials.json", results.metadata["materials"])
+            elif existing.is_dir() and mappings:
+                # Optional DataFile import only; no solver execution or benchmark.
+                native = False
+                source = existing
+                results = QWResults(existing, files=mappings)
+            else:
+                raise ValueError("Specify a result.npz archive/directory, or configure output_files for legacy .dat import.")
             manifest["analysis_of_existing_results"] = True
-            manifest["excitation_model"] = "external_results_conditions_unverified"
+            manifest["calculation_engine"] = "python_effective_mass" if native else "legacy_file_import"
+            manifest["excitation_model"] = "archived_calculation" if native else "external_conditions_unverified"
 
-        manifest["source_directory"] = str(source)
-        results = QWResults(source, files=mappings)
-        # Load and validate both required scientific outputs before making plots.
+        manifest["source"] = str(source)
         results.load_band_edges()
         spectrum = results.load_spectrum()
         analyzer = PeakAnalyzer(spectrum)
@@ -126,23 +146,20 @@ def main(argv: list[str] | None = None) -> int:
         for key in ("source", "source_axis", "source_axis_unit", "spectral_density", "conversion"):
             if key in spectrum:
                 summary[key] = spectrum[key]
-        figures = run_directory / "figures"
-        analysis = run_directory / "analysis"
         results.plot_band_diagram(
-            figures / "quantum_well.png", structure=structure,
-            include_states=arguments.include_states,
+            run_directory / "figures/quantum_well.png", structure=structure,
+            include_states=native or arguments.include_states,
             include_wavefunctions=arguments.include_wavefunctions,
         )
-        analyzer.plot_pl_spectrum(figures / "pl_spectrum.png")
-        analyzer.export_csv(analysis / "pl_spectrum.csv")
-        # Retain the excitation/reference conditions alongside the peak result.
-        summary["excitation_model"] = manifest["excitation_model"]
-        summary["configured_electron_fermi_ev"] = settings.electron_fermi_ev
-        summary["configured_hole_fermi_ev"] = settings.hole_fermi_ev
-        summary["settings_verified_against_generated_input"] = arguments.results_dir is None
-        summary["source_directory"] = str(source)
-        summary["orientation"] = {"x_hkl": list(settings.x_hkl), "y_hkl": list(settings.y_hkl)}
-        write_json(analysis / "pl_summary.json", summary)
+        analyzer.plot_pl_spectrum(run_directory / "figures/pl_spectrum.png")
+        analyzer.export_csv(run_directory / "analysis/pl_spectrum.csv")
+        summary.update({
+            "calculation_engine": manifest["calculation_engine"],
+            "source": str(source),
+            "calculation_metadata": results.metadata if native else {},
+            "intensity_interpretation": "relative_spectral_density" if native else "configured_legacy_units",
+        })
+        write_json(run_directory / "analysis/pl_summary.json", summary)
         manifest["status"] = "completed"
         write_json(snapshots / "run.json", manifest)
         print(f"Results saved: {run_directory}")

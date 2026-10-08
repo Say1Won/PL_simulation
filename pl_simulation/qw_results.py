@@ -1,17 +1,21 @@
-"""Read explicitly selected nextnano++ outputs and draw a quantum-well diagram."""
+"""Validate native calculation results or read explicitly selected solver data."""
 
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
 from typing import Any, Mapping
+from zipfile import BadZipFile
 
 import numpy as np
 
 
 class QWResults:
-    """Post-process solver output without guessing files or column identities.
+    """Post-process native results or explicitly mapped external output files.
 
+    Native calculations use :meth:`from_calculation` or :meth:`from_archive`
+    and need no nextnanopy installation. For optional nextnano file imports,
     ``files`` maps ``band_edges``, ``states``, ``wavefunctions`` and ``spectrum``
     to specifications. Each source needs ``path`` or ``glob`` and exact column
     names (or deliberately configured zero-based indices). State sources are
@@ -20,6 +24,12 @@ class QWResults:
     """
 
     HC_EV_NM = 1239.8419843320026
+    _ARRAY_KEYS = (
+        "position_nm", "conduction_ev", "valence_ev",
+        "electron_energies_ev", "valence_energies_ev",
+        "electron_wavefunctions", "hole_wavefunctions",
+        "energy_ev", "energy_intensity",
+    )
 
     def __init__(
         self,
@@ -29,6 +39,178 @@ class QWResults:
         self.output_directory = Path(output_directory).expanduser().resolve()
         self.files = deepcopy(dict(files or {}))
         self._data: dict[str, Any] = {}
+        self._calculation: dict[str, Any] | None = None
+        self._metadata: dict[str, Any] = {}
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Return an independent copy of native model and provenance metadata."""
+        return deepcopy(self._metadata)
+
+    @classmethod
+    def from_calculation(cls, calculation: Mapping[str, Any]) -> "QWResults":
+        """Validate an effective-mass calculation on one shared energy reference.
+
+        Required arrays are spatial band edges, state electron energies,
+        scalar envelope wavefunctions and emission density per eV. Hole
+        wavefunctions correspond to ``valence_energies_ev`` (valence electron
+        energies), not positive hole confinement energies. Additional numeric
+        arrays are preserved in archives without object serialization.
+        """
+        if not isinstance(calculation, Mapping):
+            raise ValueError("A calculation must be a mapping of arrays and metadata.")
+        missing = [key for key in cls._ARRAY_KEYS if key not in calculation]
+        if missing:
+            raise ValueError(f"Calculation is missing required arrays: {', '.join(missing)}.")
+        raw_metadata = calculation.get("metadata", {})
+        if not isinstance(raw_metadata, Mapping):
+            raise ValueError("Calculation metadata must be a JSON object.")
+        try:
+            metadata = json.loads(json.dumps(dict(raw_metadata), allow_nan=False))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Calculation metadata must contain finite JSON-compatible values.") from exc
+        reference = metadata.setdefault("energy_reference", "unstrained_GaN_VBM")
+        if not isinstance(reference, str) or not reference.strip():
+            raise ValueError("Calculation metadata requires a shared nonempty energy_reference.")
+        unit = metadata.setdefault("energy_intensity_unit", "relative/eV")
+        if not isinstance(unit, str) or not unit.endswith("/eV") or unit == "/eV":
+            raise ValueError("energy_intensity_unit must explicitly describe density per eV.")
+
+        arrays: dict[str, np.ndarray] = {}
+        for key, values in calculation.items():
+            if key == "metadata":
+                continue
+            if not isinstance(key, str) or not key or key in ("metadata_json", "format_version"):
+                raise ValueError("Calculation array names must be nonempty, unreserved strings.")
+            try:
+                array = np.asarray(values)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Calculation array {key!r} cannot be converted to a numeric array.") from exc
+            if array.dtype.kind not in "biufc" or not np.all(np.isfinite(array)):
+                raise ValueError(f"Calculation array {key!r} must contain finite numeric values.")
+            if key in cls._ARRAY_KEYS:
+                if array.dtype.kind in "bc":
+                    raise ValueError(f"Calculation array {key!r} must contain real numeric values.")
+                array = np.asarray(array, dtype=float)
+            arrays[key] = array.copy()
+
+        for key in ("position_nm", "energy_ev"):
+            axis = arrays[key]
+            if axis.ndim != 1 or axis.size < 2 or np.any(np.diff(axis) <= 0):
+                raise ValueError(f"{key} must be a strictly increasing one-dimensional axis with at least two points.")
+        position = arrays["position_nm"]
+        for key in ("conduction_ev", "valence_ev"):
+            if arrays[key].shape != position.shape:
+                raise ValueError(f"{key} must match position_nm.")
+        for energy_key, wave_key in (
+            ("electron_energies_ev", "electron_wavefunctions"),
+            ("valence_energies_ev", "hole_wavefunctions"),
+        ):
+            energies = arrays[energy_key]
+            if energies.ndim != 1 or energies.size == 0:
+                raise ValueError(f"{energy_key} must be a nonempty one-dimensional array.")
+            waves = arrays[wave_key]
+            if waves.shape != (energies.size, position.size):
+                raise ValueError(f"{wave_key} must have shape (state count, position count).")
+            if np.any(np.max(np.abs(waves), axis=1) == 0):
+                raise ValueError(f"{wave_key} cannot contain a zero envelope.")
+        energy = arrays["energy_ev"]
+        density = arrays["energy_intensity"]
+        if np.any(energy <= 0) or density.shape != energy.shape or np.any(density < 0):
+            raise ValueError("Energy spectrum requires positive energies and matching nonnegative density.")
+
+        instance = cls(Path.cwd())
+        instance._metadata = metadata
+        instance._calculation = {**arrays, "metadata": deepcopy(metadata)}
+        instance._data["band_edges"] = {
+            "position_nm": position, "conduction_ev": arrays["conduction_ev"],
+            "valence_ev": arrays["valence_ev"], "energy_reference": reference,
+            "conduction_label": "effective mass", "valence_label": "effective mass",
+            "valence_components_ev": {"effective mass": arrays["valence_ev"]},
+        }
+        states: dict[str, Any] = {"energy_reference": reference}
+        waves: dict[str, Any] = {}
+        for kind, energy_key, wave_key in (
+            ("electron", "electron_energies_ev", "electron_wavefunctions"),
+            ("valence", "valence_energies_ev", "hole_wavefunctions"),
+        ):
+            labels = [f"{kind} {index + 1}" for index in range(arrays[energy_key].size)]
+            states[f"{kind}_ev"] = arrays[energy_key]
+            states[f"{kind}_labels"] = labels
+            waves[kind] = {
+                "position_nm": position, "values": arrays[wave_key],
+                "representation": "envelope", "labels": labels,
+            }
+        instance._data["states"] = states
+        instance._data["wavefunctions"] = waves
+        wavelength = cls.HC_EV_NM / energy
+        wavelength, intensity = cls._sort_rows(
+            wavelength, density * cls.HC_EV_NM / wavelength**2,
+        )
+        instance._data["spectrum"] = {
+            "wavelength_nm": wavelength, "intensity": intensity,
+            "intensity_unit": unit[:-3] + "/nm", "axis": "wavelength", "axis_unit": "nm",
+            "source_axis": "energy", "source_axis_unit": "eV", "spectral_density": True,
+            "conversion": "intensity_per_eV * hc_eV_nm / wavelength_nm**2",
+            "source": "native_calculation",
+        }
+        return instance
+
+    def save_calculation(self, path: str | Path) -> Path:
+        """Save native arrays and JSON metadata as a pickle-free NumPy archive."""
+        if self._calculation is None:
+            raise ValueError("Only native calculation results can be saved as a calculation archive.")
+        destination = Path(path).expanduser()
+        if destination.suffix.lower() != ".npz":
+            raise ValueError("Calculation archive path must end in .npz.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        payload = {key: value for key, value in self._calculation.items() if key != "metadata"}
+        payload["metadata_json"] = np.asarray(json.dumps(self._metadata, allow_nan=False))
+        payload["format_version"] = np.asarray(1, dtype=np.int64)
+        # Exclusive creation preserves prior run results and prevents the suffix
+        # rewriting performed by np.savez_compressed when given a path string.
+        stream = destination.open("xb")
+        try:
+            with stream:
+                np.savez_compressed(stream, **payload)
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        return destination
+
+    @classmethod
+    def from_archive(cls, path: str | Path) -> "QWResults":
+        """Load and validate an archive without enabling pickle deserialization."""
+        source = Path(path).expanduser().resolve()
+        if not source.is_file():
+            raise FileNotFoundError(f"Calculation archive does not exist: {source}")
+        try:
+            archive = np.load(source, allow_pickle=False)
+            if not isinstance(archive, np.lib.npyio.NpzFile):
+                raise ValueError("Expected a .npz calculation archive.")
+            with archive:
+                keys = set(archive.files)
+                required = {*cls._ARRAY_KEYS, "metadata_json", "format_version"}
+                if not required.issubset(keys):
+                    raise ValueError(f"Archive is missing required arrays: {', '.join(sorted(required - keys))}.")
+                version = archive["format_version"]
+                if version.shape != () or version.dtype.kind not in "iu" or int(version) != 1:
+                    raise ValueError("Unsupported calculation archive format_version.")
+                raw_metadata = archive["metadata_json"]
+                if raw_metadata.shape != () or raw_metadata.dtype.kind != "U":
+                    raise ValueError("Archive metadata_json must be a Unicode scalar.")
+                metadata = json.loads(str(raw_metadata))
+                calculation = {
+                    key: archive[key].copy() for key in archive.files
+                    if key not in ("metadata_json", "format_version")
+                }
+                calculation["metadata"] = metadata
+            result = cls.from_calculation(calculation)
+        except (OSError, ValueError, TypeError, KeyError, BadZipFile) as exc:
+            raise ValueError(f"Invalid calculation archive {source}: {exc}") from exc
+        result.output_directory = source.parent
+        result._data["spectrum"]["source"] = str(source)
+        return result
 
     def _spec(self, kind: str) -> dict[str, Any]:
         spec = self.files.get(kind)
@@ -129,6 +311,8 @@ class QWResults:
         ``valence_components_ev``. This avoids assuming HH is always the top
         valence branch for every orientation or strain condition.
         """
+        if "band_edges" in self._data:
+            return self._data["band_edges"]
         spec = self._spec("band_edges")
         data = self._load_file(spec)
         x = self._column(data, spec["coordinate"], coordinate=True)
@@ -163,6 +347,8 @@ class QWResults:
         before configuring these selectors. A positive 'hole confinement energy'
         is not a valence electron energy and must not be supplied here.
         """
+        if "states" in self._data:
+            return self._data["states"]
         spec = self._spec("states")
         reference = spec.get("energy_reference")
         if not isinstance(reference, str) or not reference.strip():
@@ -199,6 +385,8 @@ class QWResults:
         an arbitrary component. Configure probability data for visualization or
         use a dedicated spinor treatment for physical overlap calculations.
         """
+        if "wavefunctions" in self._data:
+            return self._data["wavefunctions"]
         spec = self._spec("wavefunctions")
         result: dict[str, Any] = {}
         for kind in ("electron", "valence"):
@@ -234,6 +422,8 @@ class QWResults:
         ``density_axis_unit``. The transformation uses |dE/dλ| = hc/λ², so its
         wavelength peak can differ from the energy-spectrum peak.
         """
+        if "spectrum" in self._data:
+            return self._data["spectrum"]
         spec = self._spec("spectrum")
         if spec.get("axis_container", "coords") not in ("coords", "variables"):
             raise ValueError("Spectrum axis_container must be 'coords' or 'variables'.")

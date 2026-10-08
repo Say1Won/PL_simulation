@@ -1,6 +1,7 @@
 """Numerical spectrum tests use temporary arithmetic fixtures, not PL predictions."""
 
 from pathlib import Path
+import importlib.util
 import os
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ def spectrum(wavelength, intensity):
             "intensity_unit": "test_rate/nm", "axis": "wavelength", "axis_unit": "nm"}
 
 
+@unittest.skipUnless(importlib.util.find_spec("nextnanopy"), "Optional legacy .dat tests require nextnanopy.")
 class SpectrumFileTests(unittest.TestCase):
     def setUp(self):
         self.temporary = TemporaryDirectory()

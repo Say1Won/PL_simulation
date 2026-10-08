@@ -1,4 +1,4 @@
-"""Ordered barrier/well/barrier structure and nextnano template variables."""
+"""Ordered barrier/well/barrier structure and spatial layer boundaries."""
 
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -57,18 +57,6 @@ class SingleQWStructure:
     def get_well_regions(self) -> list[dict[str, Any]]:
         """Return a list even for SQW, so plotting can later support MQW."""
         return [region for region in self.get_layer_ranges() if region["role"] == "well"]
-
-    def to_input_variables(self) -> dict[str, float]:
-        """Map structure values to declared variables in the .nnp template."""
-        left, well, right = self.layers
-        return {
-            "LEFT_BARRIER_THICKNESS": left.thickness_nm,
-            "WELL_THICKNESS": well.thickness_nm,
-            "RIGHT_BARRIER_THICKNESS": right.thickness_nm,
-            "LEFT_BARRIER_INDIUM": left.indium_fraction,
-            "WELL_INDIUM": well.indium_fraction,
-            "RIGHT_BARRIER_INDIUM": right.indium_fraction,
-        }
 
     def to_dict(self) -> dict[str, Any]:
         """Return the complete structure for an input snapshot."""

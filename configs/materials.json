@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "crystal": "wurtzite",
+  "energy_reference": "unstrained_GaN_VBM",
+  "gap_bowing_ev": 1.4,
+  "mass_interpolation": "linear_mass",
+  "materials": {
+    "GaN": {
+      "band_gap_0k_ev": 3.51,
+      "varshni_alpha_ev_k": 0.000909,
+      "varshni_beta_k": 830.0,
+      "electron_mass_z": 0.2,
+      "electron_mass_xy": 0.2,
+      "hole_mass_z": 1.8867924528301887,
+      "hole_mass_xy": 0.2564102564102564,
+      "source_id": "vurgaftman_meyer_2003",
+      "hole_mass_derivation": "Scalar A-like diagonal projection: mz/m0=-1/(A1+A3), mxy/m0=-1/(A2+A4), with A1=-7.21, A2=-0.44, A3=6.68, A4=-3.46. Valence mixing and the other A parameters are omitted."
+    },
+    "InN": {
+      "band_gap_0k_ev": 0.78,
+      "varshni_alpha_ev_k": 0.000245,
+      "varshni_beta_k": 624.0,
+      "electron_mass_z": 0.07,
+      "electron_mass_xy": 0.07,
+      "hole_mass_z": 1.5625,
+      "hole_mass_xy": 0.1692047377326565,
+      "source_id": "vurgaftman_meyer_2003",
+      "hole_mass_derivation": "Scalar A-like diagonal projection: mz/m0=-1/(A1+A3), mxy/m0=-1/(A2+A4), with A1=-8.21, A2=-0.68, A3=7.57, A4=-5.23. Valence mixing and the other A parameters are omitted."
+    }
+  },
+  "sources": {
+    "vurgaftman_meyer_2003": {
+      "authors": "I. Vurgaftman and J. R. Meyer",
+      "title": "Band parameters for nitrogen-containing semiconductors",
+      "journal": "Journal of Applied Physics 94, 3675-3696 (2003)",
+      "doi": "10.1063/1.1600519",
+      "url": "https://doi.org/10.1063/1.1600519",
+      "locations": "Table I: unstrained wurtzite binary gaps, Varshni coefficients, electron masses and A parameters; Table III and Section II.E.1: 1.4 eV GaInN gap bowing."
+    },
+    "chuang_chang_1996": {
+      "authors": "S. L. Chuang and C. S. Chang",
+      "title": "k.p method for strained wurtzite semiconductors",
+      "journal": "Physical Review B 54, 2491-2504 (1996)",
+      "doi": "10.1103/PhysRevB.54.2491",
+      "url": "https://doi.org/10.1103/PhysRevB.54.2491",
+      "locations": "Wurtzite valence-band Hamiltonian; the implemented scalar diagonal projection is a model reduction, not the full Hamiltonian."
+    }
+  },
+  "notes": [
+    "Energies are in eV, temperatures in K, and effective masses in units of the free-electron mass m0. Varshni alpha is in eV/K, not meV/K.",
+    "The supplied constants are an identifiable 2003 literature set, not a claim of current universal material values. InN gap estimates and alloy bowing depend on the selected literature and samples; edit values and provenance together when adopting another set.",
+    "Masses are interpolated linearly as a deliberate constant-parabolic-band approximation. Energy dependence, alloy disorder, excitons, strain and automatic polarization fields are not included.",
+    "The conduction-band offset ratio is a separate configurable model assumption in simulation.json, not a tabulated offset from these sources.",
+    "The electrostatic field is prescribed by the user along the growth coordinate; it is not inferred from orientation, doping or spontaneous/piezoelectric polarization."
+  ]
+}

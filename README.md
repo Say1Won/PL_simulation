@@ -1,12 +1,12 @@
 # InGaN Single Quantum Well / PL Simulation
 
-nextnanopy로 nextnano++를 실행해 **Quantum well 밴드 그래프**와 **PL 발광 스펙트럼·peak**를 저장하는 Python 프로그램입니다. 실제 물리 계산은 nextnano++가 수행합니다.
+Python으로 **Quantum well 밴드·고유준위 그래프**와 **상대 PL 스펙트럼·peak**를 계산합니다. nextnano++ 설치, database, 라이선스가 필요하지 않습니다. 결과는 사용자가 직접 측정한 실험 데이터와 비교할 수 있도록 PNG·CSV·JSON으로 저장합니다.
 
-## 준비
+현재 계산은 **c-plane, unstrained 1D 단일 밴드 유효질량 모델**입니다. 전자와 정공의 구속 상태를 직접 풀고, 실제 envelope overlap과 캐리어 점유에서 발광 스펙트럼을 계산합니다. 실험값과 자동으로 일치시키거나 절대 PL 세기를 예측하는 모델은 아닙니다.
 
-- Python 3.10 이상
-- Python 라이브러리: `requirements.txt`
-- 실제 계산: **nextnano++ 3.0.0 이상**, 해당 버전의 재료 database, 유효한 nextnano 라이선스
+## 설치 및 실행
+
+Python 3.10 이상과 Git을 준비합니다.
 
 ```bash
 git clone https://github.com/Say1Won/PL_simulation.git
@@ -14,54 +14,55 @@ cd PL_simulation
 python -m venv .venv
 ```
 
-Windows에서는 `.venv\Scripts\activate`, Linux/macOS에서는 `source .venv/bin/activate`로 가상환경을 활성화합니다.
+Windows 명령 프롬프트(cmd):
+
+```bat
+.venv\Scripts\activate.bat
+```
+
+Linux/macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+라이브러리를 설치하고 실행합니다.
 
 ```bash
 python -m pip install -r requirements.txt
-```
-
-nextnanomat에서 **Generate nextnanopy config file**로 실행 설정을 내보내거나, 다음과 같이 설정합니다. 아래 경로는 실제 설치 경로로 바꿉니다.
-
-```python
-import nextnanopy as nn
-nn.config.set('nextnano++', 'exe', r'C:\path\nextnano++.exe')
-nn.config.set('nextnano++', 'database', r'C:\path\database.nnp')
-nn.config.set('nextnano++', 'license', r'C:\path\license.lic')
-nn.config.save()
-```
-
-기본 설정 파일은 사용자 홈의 `.nextnanopy-config`입니다. 프로그램이 설정 파일을 자동 생성하거나 수정하지는 않습니다. 별도 설정 파일을 사용하려면 `--nextnano-config PATH`를 전달합니다. 실행 경로는 **절대 경로**를 사용하세요.
-
-## 실행
-
-```bash
 python main.py
 ```
 
-solver 없이 입력 변수·파일 준비를 확인하려면:
+기본 실행에는 NumPy·SciPy·Matplotlib만 사용합니다. `nextnanopy` import, 외부 solver 호출, nextnano 기준 결과와의 대조를 수행하지 않습니다.
+
+계산 없이 입력 설정만 확인하려면:
 
 ```bash
 python main.py --prepare-only
 ```
 
-이 명령은 설정을 검증하고 입력 파일을 저장합니다. nextnanopy의 변수 파싱 검사이며 **nextnano 물리 계산이나 solver 문법 검증을 대신하지 않습니다**.
-
-이미 계산한 nextnano 결과를 분석하려면:
+파동함수를 밴드 그래프에 함께 표시하려면:
 
 ```bash
-python main.py --results-dir "C:\path\nextnano_output"
+python main.py --include-wavefunctions
 ```
 
-`--results-dir`은 `bias_00000/`를 포함하는 solver 출력 폴더를 지정합니다. 사용한 구조·계산 조건에 맞는 `--structure`, `--settings`도 함께 지정하세요. 외부 결과의 실제 여기 조건을 현재 설정 파일만으로 검증할 수는 없습니다.
-
-다른 설정/템플릿을 사용하거나 출력 위치를 바꿀 수 있습니다.
+계산한 아카이브를 다시 분석하려면:
 
 ```bash
-python main.py --structure configs/single_qw.json --settings configs/simulation.json --output-root ./outputs
+python main.py --results-dir outputs/run_001/calculation
+```
+
+`.npz` 파일을 직접 지정해도 됩니다. 아카이브의 원래 구조·계산 조건·재료 상수를 결과 metadata에서 확인할 수 있습니다. 다시 분석할 때 solver 계산은 수행하지 않습니다.
+
+다른 설정·출력 폴더는 다음과 같이 지정합니다.
+
+```bash
+python main.py --structure configs/single_qw.json --settings configs/simulation.json --materials configs/materials.json --output-root ./outputs
 python main.py --help
 ```
 
-## 구조와 클래스
+## 파일 구성과 클래스
 
 ```text
 PL_simulation/
@@ -74,64 +75,78 @@ PL_simulation/
 │   ├── layer.py
 │   ├── single_qw_structure.py
 │   ├── simulation_settings.py
-│   ├── nextnano_simulation.py
+│   ├── quantum_well_simulation.py
 │   ├── qw_results.py
-│   └── peak_analyzer.py
+│   ├── peak_analyzer.py
+│   └── material_parameters.py
 ├── configs/
 │   ├── single_qw.json
-│   └── simulation.json
-├── templates/
-│   └── single_qw_pl.nnp
+│   ├── simulation.json
+│   └── materials.json
 └── tests/
 ```
 
 | 클래스 | 역할 |
 |---|---|
 | `Layer` | 재료·조성·두께·역할 검증 |
-| `SingleQWStructure` | barrier–well–barrier 배치·경계 좌표·well 영역 |
-| `SimulationSettings` | orientation·온도·mesh·캐리어 점유·스펙트럼 조건 |
-| `NextnanoSimulation` | `InputFile`을 이용한 입력 수정·저장·실행 및 실패/수렴 확인 |
-| `QWResults` | `DataFile`로 출력 읽기, 밴드 그래프 저장 |
-| `PeakAnalyzer` | PL peak·FWHM 분석, 스펙트럼 그림·CSV·JSON 저장 |
+| `SingleQWStructure` | barrier–well–barrier 배치와 공간 경계 |
+| `SimulationSettings` | 온도·mesh·점유 밀도·전기장·스펙트럼 조건 |
+| `QuantumWellSimulation` | Python 고유상태·준페르미 준위·상대 PL 계산 |
+| `QWResults` | 계산 배열·아카이브 읽기, 밴드·고유준위 그래프 |
+| `PeakAnalyzer` | PL peak·FWHM 분석, 그림·CSV·JSON 저장 |
 
-클래스 파일은 각각 하나의 클래스만 정의합니다. import나 객체 생성만으로 solver를 실행하지 않습니다.
+클래스 파일은 각각 클래스 하나를 정의합니다. `material_parameters.py`는 재료 상수를 읽고 밴드와 질량 배열을 만드는 함수 모듈입니다. 기존 nextnano 실행 클래스·입력 템플릿은 제거했습니다.
 
 ## 변경할 설정
 
-`configs/single_qw.json`: 기본 구조는 **GaN 10 nm / In₀.₁₈Ga₀.₈₂N 3 nm / GaN 10 nm**입니다. barrier도 InGaN으로 설정할 수 있습니다. 현재 템플릿은 GaN substrate의 1D wurtzite 구조만 지원합니다.
+`configs/single_qw.json`의 기본 구조는 **GaN 10 nm / In₀.₁₈Ga₀.₈₂N 3 nm / GaN 10 nm**입니다. barrier는 well보다 낮은 In 조성의 InGaN으로도 지정할 수 있습니다.
 
 `configs/simulation.json`의 `settings`:
 
-- `temperature_k`, `grid_spacing_nm`, `electron_states`, `hole_states`
-- `x_hkl`, `y_hkl`: nextnano의 wurtzite 축 설정. **성장면과 면내 기준면의 reduced 3-index Miller 지수**입니다. 네 개의 Miller–Bravais 지수를 그대로 넣지 않습니다. 기본 c-plane은 `[0,0,1]`, `[1,0,0]`입니다. 1D 계산 축은 simulation x입니다.
-- `include_strain`, `include_polarization`: pseudomorphic strain, 압전·자발 분극 적용 여부
-- `electron_fermi_ev`, `hole_fermi_ev`: 같은 solver 에너지 기준의 전자·정공 준페르미 준위
-- `spectrum_energy_min_ev`, `spectrum_energy_max_ev`, `spectrum_energy_step_ev`, `broadening_ev`
+- `temperature_k`, `grid_spacing_nm`: 온도(K)와 요청 mesh 간격(nm). 전체 구조 길이에 맞춘 실제 균일 간격은 metadata에 기록합니다.
+- `electron_states`, `hole_states`: 구할 저에너지 상태 수. 장벽 아래의 구속 상태만 캐리어 점유와 PL에 사용합니다.
+- `electron_sheet_density_cm2`, `hole_sheet_density_cm2`: well 구속 상태에 할당한 면밀도(cm⁻²). 기본값은 각각 `1e12`이며, 준페르미 준위는 내부에서 계산합니다.
+- `conduction_band_offset_ratio`: gap 차이 중 conduction offset에 배분할 비율. 기본 `0.7`은 변경 가능한 모델 가정입니다.
+- `electric_field_kv_cm`: 성장 좌표를 따라 사용자가 지정한 균일 전기장(kV/cm). 기본 `0`. 양의 값은 conduction·valence 전자 에너지를 성장 좌표에 따라 올립니다.
+- `spectrum_energy_min_ev`, `spectrum_energy_max_ev`, `spectrum_energy_step_ev`: 에너지 스펙트럼 범위와 샘플 간격.
+- `broadening_ev`: **Gaussian 표준편차 σ(eV)**. 선폭은 약 `2.355σ`이며, 발광 스펙트럼 전체 FWHM은 캐리어 점유와 여러 전이에도 영향을 받습니다.
+- `k_integration_points`: 면내 k 적분의 최소 점 수. 좁은 broadening을 해상할 수 있도록 필요한 경우 내부에서 점 수를 늘립니다.
+- `x_hkl`, `y_hkl`: 현재는 c-plane 성장 `±[0,0,1]`과 비영 basal-plane 기준만 지원합니다. 다른 orientation은 오류로 거부합니다.
+- `include_strain`, `include_polarization`: 현재 반드시 `false`. 지원하지 않는 물리를 활성화하면 명시적으로 실패합니다.
 
-orientation의 비영·비평행성은 Python이 검사하고, 실제 결정 격자 metric과 회전은 solver가 처리합니다. 방향에 따른 변화를 비교할 때 같은 substrate·여기 조건·수치 수렴 조건을 유지하세요.
+예전 `electron_fermi_ev`·`hole_fermi_ev` 설정은 사용하지 않습니다. 새 기본 설정 파일을 사용하세요. 기존 값에서 면밀도를 자동 추정하지 않습니다.
 
-`output_files`는 **출력 파일과 열을 명시적으로 지정**합니다. 기본값은 템플릿의 `single_qw`/`TEy` 이름을 사용합니다. solver 버전이나 템플릿을 변경해 파일 이름·열이 달라지면 이 매핑을 수정하세요. 여러 파일이 모호하게 일치하거나 필수 열이 없으면 실패하며 임의의 파일을 선택하지 않습니다.
+## 재료 상수와 계산 모델
 
-## PL 모델과 결과 해석
+`configs/materials.json`에서 GaN/InN gap·Varshni 계수·유효질량·InGaN gap bowing과 논문 출처를 변경할 수 있습니다. 기본 상수는 Vurgaftman & Meyer, *Journal of Applied Physics* **94**, 3675 (2003), [DOI:10.1063/1.1600519](https://doi.org/10.1063/1.1600519)의 구분 가능한 2003 parameter set입니다. InN gap과 bowing은 문헌·시료에 따라 달라질 수 있으므로 다른 값을 사용하면 출처도 함께 수정하세요.
 
-기본 모델은 **지정한 준페르미 준위에서의 자발 방출 스펙트럼**입니다. 여기된 캐리어 점유를 입력으로 주고, strain·분극 및 Schrödinger–Poisson 전위/캐리어 screening과 unified **8-band k·p** 광학 계산을 연결합니다. 기본 3.0/0.0 eV 준페르미 값은 예시 조건입니다.
+조성에 따른 gap은 온도 의존 GaN/InN gap의 보간과 bowing으로 구합니다. 유효질량은 선형 보간합니다. 정공 질량은 wurtzite valence Hamiltonian의 **scalar A-like diagonal projection**이며, 전체 다중 밴드 계산을 대체하지 않습니다. 유도식과 원래 A 계수는 JSON에 기록했습니다.
 
-현재는 레이저 파장·파워에서 광생성률과 캐리어 포획·수명을 계산하는 모델을 포함하지 않습니다. 실측 레이저 파워에 대응하는 PL을 예측하려면 해당 과정이나 별도로 검증한 캐리어 점유 조건을 연결해야 합니다. 기본 스펙트럼은 simulation y 방향 `TEy` 편광이며 전체 편광·각도 적분 발광량은 아닙니다. 기본 템플릿의 k-space 적분·굴절률 설정도 수렴/보정 대상입니다.
+계산 순서:
 
-밴드 그래프의 valence 곡선은 `HH`, `LH`, `SO` 중 위치별 최대값입니다. 고유준위/파동함수는 명시적 출력 매핑이 있을 때 `--include-states`/`--include-wavefunctions`로 추가합니다. kp8 상태를 임의로 전자/정공으로 분류하지 않습니다. 상태를 지정할 때 conduction-like/valence-like 성분을 확인하고 **동일한 에너지 기준의 valence electron energy**를 사용하세요. 파동함수는 표시용 크기로 스케일합니다.
+1. 위치별 conduction·valence 밴드와 성장 방향·면내 유효질량 생성.
+2. 위치 의존 질량을 반영한 BenDaniel–Duke Hamiltonian의 저에너지 고유상태 계산. 바깥 경계는 `ψ=0`입니다.
+3. 양쪽 장벽보다 낮은 상태를 선택하고, 2D parabolic subband 점유가 지정 면밀도를 재현하도록 전자·정공 준페르미 준위 계산.
+4. 전자·정공 envelope overlap, 면내 joint density of states, Fermi 점유를 적분하여 상대 발광 스펙트럼 계산. 일정한 interband momentum matrix element를 가정하고 photon energy factor를 사용합니다.
+5. 면적이 1인 Gaussian kernel로 broadening, 에너지 밀도를 파장 밀도로 변환, peak·FWHM 분석.
 
-기본 PL 출력은 solver의 photon density per eV를 읽고 `|dE/dλ| = hc/λ²`를 적용해 **per nm**로 변환합니다. 따라서 파장 스펙트럼 peak는 에너지 스펙트럼 peak의 단순 좌표 변환과 다를 수 있습니다. `estimate_transition()`의 준위 간 전이 추정도 PL peak와 별도입니다.
+tridiagonal 고유해석으로 필요한 상태만 계산하고, 면내 적분은 묶어서 처리해 큰 임시 배열을 피합니다. 이미 읽은 밴드·스펙트럼은 그래프 생성에 재사용합니다.
 
-FWHM은 선택된 peak 주변의 연속적인 반치폭을 선형 보간해 구합니다. baseline을 빼지 않으며, peak/반치 구간이 출력 경계에서 잘리면 `null`로 기록합니다. 전부 0인 스펙트럼에서는 peak를 만들어 내지 않고 여기 조건·파일 매핑 확인을 요청합니다.
+현재 자동 strain·자발/압전 분극, self-consistent Poisson·carrier screening, valence mixing, exciton, alloy localization, 포획·수명·비방사 재결합 및 검출기 응답은 포함하지 않습니다. 외부 전기장 입력은 이러한 물리의 자동 계산과 별개입니다. c-plane InGaN 실험에서 이 효과들이 peak·선폭·강도 차이의 원인이 될 수 있습니다.
 
-## 생성 결과
+## 생성 결과와 실험 비교
 
-`outputs/`는 Git에 포함하지 않으며 처음 실행할 때 자동 생성됩니다. 기존 결과를 덮어쓰지 않고 `run_001`, `run_002`, …로 저장합니다.
+`outputs/`는 Git에서 제외하며 실행 시 자동 생성합니다. 기존 결과를 덮어쓰지 않고 `run_001`, `run_002`, …로 저장합니다.
 
 ```text
 outputs/run_001/
-├── inputs/       # 적용된 .nnp, 구조·설정 사본, 실행 상태
-├── nextnano/     # 실제 solver 출력 및 로그
+├── inputs/
+│   ├── single_qw.json
+│   ├── simulation.json
+│   ├── materials.json
+│   └── run.json
+├── calculation/
+│   └── result.npz
 ├── figures/
 │   ├── quantum_well.png
 │   └── pl_spectrum.png
@@ -140,16 +155,34 @@ outputs/run_001/
     └── pl_summary.json
 ```
 
-`--prepare-only`는 `inputs/`까지만 생성합니다. `--results-dir`은 원본 데이터를 복사하지 않고 분석 파일만 새 run에 저장합니다. 실패한 실행은 `inputs/run.json`에 원인을 기록합니다.
+`quantum_well.png`에는 밴드와 계산한 전자·valence 전자 고유준위를 함께 표시합니다. 정공 quasiparticle 고유에너지를 valence 전자 에너지로 변환해 같은 기준에서 표시합니다. `--include-wavefunctions`의 세로 크기는 표시용 스케일입니다.
 
-## 검증 및 MQW 확장
+`pl_spectrum.csv`는 파장(nm)과 **상대 스펙트럼 밀도 per nm**입니다. 에너지 밀도 per eV에서 `|dE/dλ|=hc/λ²`를 적용하므로 파장 peak는 에너지 peak의 단순 좌표 변환과 다를 수 있습니다. 절대 photons/s·레이저 파워 환산 값은 아닙니다.
+
+실험과의 peak·선폭·스펙트럼 모양 비교에는 CSV와 `pl_summary.json`을 사용하세요. 실험의 파장축·에너지축과 밀도 단위를 맞추고, 세기를 정규화했다면 동일한 정규화 방식을 적용하세요. 비교용 외부 solver 실행이나 실험 데이터 자동 fitting은 포함하지 않습니다.
+
+FWHM은 선택된 peak 주변의 연속적인 반치 구간을 선형 보간하며 baseline을 빼지 않습니다. 반치 구간이 계산 범위에서 잘리면 `null`, 전부 0인 데이터는 실패로 처리합니다. 아카이브에는 고유상태·원래 에너지 스펙트럼과 모델·밀도 잔차·재료 출처가 저장됩니다. `.npz`는 pickle을 사용하지 않습니다.
+
+`--prepare-only`는 `inputs/`만 생성합니다. 실패 원인은 해당 실행의 `inputs/run.json`에 기록합니다.
+
+## 선택적 기존 파일 가져오기
+
+기존 nextnano `.dat` 파일을 읽고 싶을 때만 `nextnanopy.DataFile`을 사용할 수 있습니다.
+
+```bash
+python -m pip install nextnanopy==1.4.0
+```
+
+`configs/simulation.json`에 `output_files`의 `band_edges`·`spectrum` 파일/열/단위 매핑을 명시하고 `--results-dir`에 기존 데이터 폴더를 지정합니다. 기본 Python 계산에는 이 설정이나 라이브러리가 필요하지 않습니다. 여러 파일에 모호하게 일치하는 매핑은 거부합니다.
+
+## 수치 검증 및 MQW 확장
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-검증은 구조/단위/입력 준비와 시험용 데이터의 파일 읽기·분석·그림 저장을 포함합니다. **이 저장소의 초기 구현은 라이선스가 있는 nextnano++에서 전체 물리 계산을 실행해 검증하지 않았습니다.** 실제 사용 시 solver 로그, 상태 분류 및 mesh·상태 수·k 적분·에너지 범위의 수렴을 확인하세요. 시험용 데이터는 물리 시뮬레이션 결과가 아닙니다.
+무한 우물 해석해, 질량 경계와 에너지 기준 이동, 파동함수 정규직교성, 지정 밀도 재현, 스펙트럼 Jacobian의 적분 보존, 아카이브 저장·복원 및 전체 Python 실행을 검사합니다. nextnanopy가 없으면 선택적 기존 `.dat` 테스트만 건너뜁니다. 다른 solver 결과와 비교하는 테스트는 없습니다.
 
-MQW 확장 시 `MQWStructure`, MQW 템플릿과 설정을 추가하고 기존 실행·결과·분석 클래스를 재사용합니다. 전체 MQW를 함께 풀어 well 사이 결합을 반영해야 합니다.
+실제 시료와 비교하기 전에 mesh·barrier 길이·상태 수·k 적분·스펙트럼 샘플링을 변화시켜 수렴을 확인하세요. 얕은 장벽 근처의 상태 수는 mesh에 민감할 수 있습니다. 이런 수치 확인은 실험과의 물리 모델 검증과 별개입니다.
 
-참고: [nextnanopy 설정](https://www.nextnano.com/docu/nextnanopy/getting_started/configuration.html), [결정 좌표계](https://www.nextnano.com/docu/nextnanoplus/latest/reference/models/strain/crystal_coordinate_systems.html), [quantum optical spectra](https://www.nextnano.com/docu/nextnanoplus/latest/reference/keywords/optics/quantum_spectra.html), [QW PL tutorial](https://www.nextnano.com/docu/nextnanoplus/latest/tutorials/quantum_well_photoluminescence_resonant.html)
+MQW는 향후 `MQWStructure`를 추가하고 전체 영역을 함께 풀어 well 사이 결합을 반영하도록 확장할 수 있습니다. 현재 `SingleQWStructure`는 정확히 하나의 well만 허용합니다.

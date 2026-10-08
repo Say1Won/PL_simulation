@@ -1,4 +1,4 @@
-"""Physical input boundary checks; no solver or material constants are invented."""
+"""Validate physical inputs and reject unsupported native-model controls."""
 
 import math
 import unittest
@@ -48,9 +48,8 @@ class SingleQWBoundaryTests(unittest.TestCase):
         self.assertEqual([(r["start_nm"], r["end_nm"]) for r in ranges],
                          [(0, 12), (12, 15), (15, 23)])
         self.assertEqual(structure.get_well_regions(), [ranges[1]])
-        variables = structure.to_input_variables()
-        self.assertEqual(variables["RIGHT_BARRIER_INDIUM"], 0.05)
-        self.assertEqual(variables["WELL_THICKNESS"], 3)
+        self.assertEqual(ranges[2]["indium_fraction"], 0.05)
+        self.assertEqual(ranges[1]["thickness_nm"], 3)
 
     def test_equal_or_higher_indium_barrier_is_not_a_supported_well(self):
         for fraction in (0.2, 0.3):
@@ -71,13 +70,16 @@ class SingleQWBoundaryTests(unittest.TestCase):
 
 
 class SettingsBoundaryTests(unittest.TestCase):
-    def test_explicit_occupation_is_required(self):
-        with self.assertRaises(ValueError):
-            SimulationSettings.from_dict({"temperature_k": 300})
-        with self.assertRaises(ValueError):
-            SimulationSettings(1, 1)
-        with self.assertRaises(ValueError):
-            SimulationSettings(0, 1)
+    def test_positive_density_defaults_and_legacy_occupation_migration(self):
+        settings = SimulationSettings.from_dict({})
+        self.assertGreater(settings.electron_sheet_density_cm2, 0)
+        self.assertGreater(settings.hole_sheet_density_cm2, 0)
+        for name in ("electron_sheet_density_cm2", "hole_sheet_density_cm2"):
+            for density in (0, -1, math.nan, math.inf, True):
+                with self.subTest(name=name, density=density), self.assertRaises(ValueError):
+                    SimulationSettings(**{name: density})
+        with self.assertRaisesRegex(ValueError, "sheet_density"):
+            SimulationSettings.from_dict({"electron_fermi_ev": 3, "hole_fermi_ev": 0})
 
     def test_zero_parallel_and_invalid_orientation_normals(self):
         for x, y in (((0, 0, 0), (1, 0, 0)),
@@ -86,18 +88,24 @@ class SettingsBoundaryTests(unittest.TestCase):
                      ((0.0, 0, 1), (1, 0, 0)),
                      ((0, 1), (1, 0, 0))):
             with self.subTest(x=x, y=y), self.assertRaises(ValueError):
-                SimulationSettings(3, 0, x_hkl=x, y_hkl=y)
+                SimulationSettings(x_hkl=x, y_hkl=y)
 
     def test_valid_orientation_and_json_roundtrip_preserve_controls(self):
         settings = SimulationSettings.from_dict({
-            "electron_fermi_ev": 3, "hole_fermi_ev": 0,
-            "x_hkl": [1, 0, 1], "y_hkl": [0, 1, 0],
-            "include_polarization": False,
+            "electron_sheet_density_cm2": 2e12, "hole_sheet_density_cm2": 8e11,
+            "x_hkl": [0, 0, -1], "y_hkl": [0, 1, 0],
+            "electric_field_kv_cm": -150,
         })
         self.assertEqual(SimulationSettings.from_dict(settings.to_dict()), settings)
-        variables = settings.to_input_variables()
-        self.assertEqual((variables["X_H"], variables["X_K"], variables["X_L"]), (1, 0, 1))
-        self.assertEqual(variables["POLARIZATION_ENABLED"], 0)
+        self.assertEqual(settings.x_hkl, (0, 0, -1))
+        self.assertEqual(settings.electric_field_kv_cm, -150)
+
+    def test_absent_strain_polarization_and_orientation_physics_are_rejected(self):
+        for override in ({"include_strain": True}, {"include_polarization": True},
+                         {"x_hkl": (1, 0, 0)}, {"x_hkl": (1, 0, 1)},
+                         {"y_hkl": (1, 0, 1)}):
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                SimulationSettings(**override)
 
     def test_invalid_spectral_grid_and_nonfinite_controls_are_rejected(self):
         invalid = (
@@ -105,10 +113,12 @@ class SettingsBoundaryTests(unittest.TestCase):
             {"spectrum_energy_step_ev": 3},
             {"broadening_ev": 0}, {"grid_spacing_nm": math.nan},
             {"electron_states": 1.5}, {"include_strain": 1},
+            {"electric_field_kv_cm": math.inf}, {"conduction_band_offset_ratio": 0},
+            {"conduction_band_offset_ratio": 1}, {"k_integration_points": 1},
         )
         for override in invalid:
             with self.subTest(override=override), self.assertRaises(ValueError):
-                SimulationSettings(3, 0, **override)
+                SimulationSettings(**override)
 
 
 if __name__ == "__main__":
