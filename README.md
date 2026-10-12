@@ -64,11 +64,41 @@ python main.py --structure configs/single_qw.json --settings configs/simulation.
 python main.py --help
 ```
 
+## In 비율을 실행할 때 지정하기
+
+`--indium-fraction`으로 QW의 In 비율만 변경할 수 있습니다. `0.20`은 20%, `0.25`는 25%입니다.
+
+```bash
+python main.py --indium-fraction 0.20
+python main.py --indium-fraction 0.25
+```
+
+옵션을 생략하면 구조 JSON에 지정한 비율을 사용합니다. 두께와 장벽 설정, 원래 JSON 파일은 유지하며 적용한 비율은 실행별 입력·아카이브·요약 JSON에 기록합니다. 비율은 `0보다 크고 1 이하`이며 양쪽 장벽의 In 비율보다 높아야 합니다. 기존 결과의 조성을 바꿀 수는 없으므로 `--results-dir`와 함께 사용하면 오류를 표시합니다.
+
+In 비율을 크게 바꾸어 피크가 계산 범위를 벗어나면 `configs/simulation.json`에서 `spectrum_energy_min_ev`와 `spectrum_energy_max_ev`를 조정하세요. `pl_summary.json`의 `peak_at_boundary`로 범위 경계에 피크가 걸렸는지 확인할 수 있습니다.
+
+## Colab에서 변수로 In 비율 조정하기
+
+[Colab 노트북 열기](https://colab.research.google.com/github/Say1Won/PL_simulation/blob/main/colab.ipynb)에서 세 코드 셀을 순서대로 실행하세요. 두 번째 셀의 **`IN_FRACTION` 값만 변경**하면 됩니다. 반복 계산은 두 번째·세 번째 셀을 실행하세요.
+
+```python
+IN_FRACTION = 0.25  # 25%; 20%로 계산하려면 0.20
+
+subprocess.run(
+    [sys.executable, str(repo / "main.py"), "--indium-fraction", str(IN_FRACTION)],
+    cwd=repo,
+    check=True,
+)
+```
+
+첫 셀은 최신 저장소 코드를 받으며, 계산은 새 Python 프로세스에서 실행합니다. 마지막 셀은 이번에 생성된 QW·PL 그래프와 실제 사용한 In 비율을 표시합니다. PL 최대 세기는 이전과 동일하게 **1.0 a.u.**입니다.
+
 ## 파일 구성과 클래스
 
 ```text
 PL_simulation/
 ├── main.py
+├── colab.ipynb
 ├── requirements.txt
 ├── README.md
 ├── .gitignore

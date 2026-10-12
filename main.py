@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -52,6 +53,10 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         description="Calculate a single QW and relative PL directly in Python; no external solver required."
     )
     parser.add_argument("--structure", type=Path, default=PROJECT_ROOT / "configs/single_qw.json")
+    parser.add_argument(
+        "--indium-fraction", type=float, metavar="X",
+        help="Override only the QW In mole fraction (0 < X <= 1; e.g. 0.25 means 25%%).",
+    )
     parser.add_argument("--settings", type=Path, default=PROJECT_ROOT / "configs/simulation.json")
     parser.add_argument("--materials", type=Path, default=PROJECT_ROOT / "configs/materials.json")
     parser.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "outputs")
@@ -69,6 +74,12 @@ def main(argv: list[str] | None = None) -> int:
     manifest: dict[str, Any] = {}
     try:
         structure = SingleQWStructure.from_dict(read_json(arguments.structure))
+        if arguments.indium_fraction is not None:
+            if arguments.results_dir is not None:
+                raise ValueError("--indium-fraction cannot be used with --results-dir; run a new calculation to change composition.")
+            left_barrier, well, right_barrier = structure.layers
+            well = replace(well, indium_fraction=arguments.indium_fraction)
+            structure = replace(structure, layers=(left_barrier, well, right_barrier))
         configuration = read_json(arguments.settings)
         unknown = set(configuration) - {"settings", "output_files"}
         if unknown:
@@ -166,6 +177,8 @@ def main(argv: list[str] | None = None) -> int:
         manifest["status"] = "completed"
         write_json(snapshots / "run.json", manifest)
         print(f"Results saved: {run_directory}")
+        fraction = structure.layers[1].indium_fraction
+        print(f"QW In fraction: {fraction:g} ({100 * fraction:g}%)")
         print(f"Emission intensity unit: {summary['intensity_unit']}")
         if "intensity_normalization" in summary:
             print(f"PL intensity normalized: peak = {summary['intensity']:.1f} a.u.")

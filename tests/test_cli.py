@@ -117,6 +117,82 @@ class CommandLineIntegrationTests(unittest.TestCase):
                          "intensity_normalization", "normalization_reference_intensity"):
             self.assertEqual(reloaded_summary[quantity], original_summary[quantity])
 
+    def test_indium_fraction_override_changes_pl_and_records_the_applied_structure(self):
+        source_path = ROOT / "configs/single_qw.json"
+        original_bytes = source_path.read_bytes()
+        original = json.loads(original_bytes)
+        summaries = []
+        for run_number, fraction in enumerate((0.20, 0.25), start=1):
+            with self.subTest(fraction=fraction):
+                completed = self.invoke("--indium-fraction", str(fraction))
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                run = self.output_root / f"run_{run_number:03d}"
+                expected = json.loads(original_bytes)
+                expected["layers"][1]["indium_fraction"] = fraction
+                snapshot = json.loads((run / "inputs/single_qw.json").read_text())
+                self.assertEqual(snapshot, expected)
+                manifest = json.loads((run / "inputs/run.json").read_text())
+                self.assertEqual(manifest["structure"], expected)
+                summary = self.load_summary(run_number)
+                self.assertEqual(summary["calculation_metadata"]["structure"], expected)
+                self.assertEqual(summary["intensity"], 1)
+                self.assertEqual(summary["intensity_unit"], "a.u.")
+                self.assertFalse(summary["peak_at_boundary"])
+                with np.load(run / "calculation/result.npz", allow_pickle=False) as archive:
+                    metadata = json.loads(str(archive["metadata_json"]))
+                self.assertEqual(metadata["structure"], expected)
+                self.assertEqual(metadata["material_profiles"]["layers"][1]["indium_fraction"], fraction)
+                self.assertEqual(source_path.read_bytes(), original_bytes)
+                self.assertEqual(snapshot["layers"][0], original["layers"][0])
+                self.assertEqual(snapshot["layers"][2], original["layers"][2])
+                summaries.append(summary)
+        self.assertGreater(summaries[1]["wavelength_nm"], summaries[0]["wavelength_nm"])
+        self.assertLess(summaries[1]["energy_ev"], summaries[0]["energy_ev"])
+
+    def test_indium_fraction_prepare_only_and_omitted_option_use_the_custom_structure(self):
+        structure = json.loads((ROOT / "configs/single_qw.json").read_text())
+        structure["layers"][1]["indium_fraction"] = 0.31
+        structure_path = self.directory / "custom_structure.json"
+        original_bytes = json.dumps(structure).encode()
+        structure_path.write_bytes(original_bytes)
+        for run_number, arguments, expected_fraction in (
+            (1, (), 0.31), (2, ("--indium-fraction", "0.25"), 0.25),
+        ):
+            completed = self.invoke("--structure", str(structure_path), "--prepare-only", *arguments)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            run = self.output_root / f"run_{run_number:03d}"
+            saved = json.loads((run / "inputs/single_qw.json").read_text())
+            self.assertEqual(saved["layers"][1]["indium_fraction"], expected_fraction)
+            self.assertFalse((run / "calculation").exists())
+            self.assertEqual(structure_path.read_bytes(), original_bytes)
+
+    def test_invalid_indium_fractions_fail_before_allocating_outputs(self):
+        for fraction in ("0", "-0.1", "1.1", "25", "nan", "inf", "-inf"):
+            with self.subTest(fraction=fraction):
+                completed = self.invoke(f"--indium-fraction={fraction}", "--prepare-only")
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn("indium_fraction", completed.stderr)
+                self.assertFalse(self.output_root.exists())
+
+    def test_indium_fraction_override_must_exceed_the_barrier_composition(self):
+        structure = json.loads((ROOT / "configs/single_qw.json").read_text())
+        structure["layers"][0].update(material="InGaN", indium_fraction=0.10)
+        structure_path = self.directory / "alloy_barrier.json"
+        structure_path.write_text(json.dumps(structure))
+        for fraction in (0.10, 0.05):
+            with self.subTest(fraction=fraction):
+                completed = self.invoke("--structure", str(structure_path),
+                                        "--indium-fraction", str(fraction), "--prepare-only")
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn("lower In fraction", completed.stderr)
+                self.assertFalse(self.output_root.exists())
+
+    def test_indium_fraction_cannot_override_archived_results(self):
+        completed = self.invoke("--indium-fraction", "0.25", "--results-dir", str(self.directory))
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertIn("cannot be used with --results-dir", completed.stderr)
+        self.assertFalse(self.output_root.exists())
+
     def test_native_archive_without_signal_cannot_report_a_peak(self):
         original = self.invoke()
         self.assertEqual(original.returncode, 0, original.stderr)
