@@ -37,6 +37,10 @@ class PeakAnalyzer:
         unit = source.get("intensity_unit")
         if not isinstance(unit, str) or not unit.strip():
             raise ValueError("A declared emission intensity unit is required.")
+        # Old spectrum mappings may still carry the relative density label.
+        # Canonicalize it at the shared PNG/CSV/JSON output boundary as well.
+        if unit.strip() in {"relative", "relative/nm", "a.u./nm"}:
+            unit = "a.u."
         return x, y, unit, source
 
     @classmethod

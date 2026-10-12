@@ -1,7 +1,9 @@
 """Numerical spectrum tests use temporary arithmetic fixtures, not PL predictions."""
 
 from pathlib import Path
+import csv
 import importlib.util
+import json
 import os
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -143,6 +145,41 @@ class SpectrumFileTests(unittest.TestCase):
 
 
 class PeakNumericalTests(unittest.TestCase):
+    def test_old_relative_units_use_arbitrary_units_in_all_outputs(self):
+        from matplotlib.figure import Figure
+
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for original_unit, expected_unit in (
+                ("relative/nm", "a.u."), ("relative", "a.u."),
+                ("a.u./nm", "a.u."), ("W/nm", "W/nm"),
+                ("test_rate/nm", "test_rate/nm"),
+            ):
+                with self.subTest(unit=original_unit):
+                    original = spectrum([400, 401, 402, 403, 404], [0, 4, 10, 2, 0])
+                    original["intensity_unit"] = original_unit
+                    analyzer = PeakAnalyzer(original)
+                    peak = analyzer.find_spectrum_peak()
+                    self.assertEqual(peak["intensity_unit"], expected_unit)
+                    self.assertEqual(peak["intensity"], 10)
+                    self.assertEqual(peak["wavelength_nm"], 402)
+                    with patch.object(Figure, "savefig", autospec=True) as save:
+                        analyzer.plot_pl_spectrum(directory / "pl.png")
+                    figure = save.call_args.args[0]
+                    self.assertEqual(figure.axes[0].get_ylabel(),
+                                     f"Emission intensity ({expected_unit})")
+                    np.testing.assert_array_equal(figure.axes[0].lines[0].get_ydata(),
+                                                  original["intensity"])
+                    csv_path = analyzer.export_csv(directory / "pl.csv")
+                    with csv_path.open(newline="", encoding="utf-8") as stream:
+                        rows = list(csv.reader(stream))
+                    self.assertEqual(rows[0], ["wavelength_nm", f"intensity [{expected_unit}]"])
+                    np.testing.assert_array_equal(np.asarray(rows[1:], dtype=float)[:, 1],
+                                                  original["intensity"])
+                    summary = json.loads(analyzer.export_summary(directory / "pl.json").read_text())
+                    self.assertEqual(summary["intensity_unit"], expected_unit)
+                    self.assertEqual(original["intensity_unit"], original_unit)
+
     def test_fwhm_interpolates_nonuniform_grid_crossings(self):
         analyzer = PeakAnalyzer(spectrum([400, 401, 403, 407, 409], [0, 3, 10, 2, 0]))
         peak = analyzer.find_spectrum_peak()

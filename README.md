@@ -62,11 +62,28 @@ python main.py --structure configs/single_qw.json --settings configs/simulation.
 python main.py --help
 ```
 
+## Google Colab에서 실행
+
+[Colab 실행 노트북 열기](https://colab.research.google.com/github/Say1Won/PL_simulation/blob/main/colab.ipynb)를 눌러 세 개의 코드 셀을 위에서부터 실행하세요.
+
+첫 셀은 저장소가 없으면 clone하고, 이미 있으면 `git pull --ff-only origin main`으로 최신 코드를 받습니다. 둘째 셀은 새 Python 프로세스에서 계산합니다. 셋째 셀은 **이번 실행에서 새로 생성한 결과 폴더**의 단위가 `a.u.`인지 확인한 뒤 QW와 PL 그림을 표시합니다. 셀을 다시 실행해도 기존 출력 폴더를 덮어쓰지 않습니다.
+
+이미 Colab에서 clone한 폴더를 수동으로 갱신하려면 다음 셀을 실행하세요.
+
+```python
+%cd /content/PL_simulation
+!git pull --ff-only origin main
+!python main.py
+```
+
+기존 PNG 파일은 생성 당시의 표기를 유지합니다. 갱신 후 새 결과를 표시하거나, `--results-dir`로 기존 계산 아카이브를 다시 분석해 새 그림을 생성하세요. `from pl_simulation import ...`를 노트북에서 직접 사용하던 경우에는 런타임을 다시 시작해 갱신된 모듈을 불러오세요.
+
 ## 파일 구성과 클래스
 
 ```text
 PL_simulation/
 ├── main.py
+├── colab.ipynb
 ├── requirements.txt
 ├── README.md
 ├── .gitignore
@@ -158,6 +175,8 @@ outputs/run_001/
 `quantum_well.png`에는 밴드와 계산한 전자·valence 전자 고유준위를 함께 표시합니다. 정공 quasiparticle 고유에너지를 valence 전자 에너지로 변환해 같은 기준에서 표시합니다. `--include-wavefunctions`의 세로 크기는 표시용 스케일입니다.
 
 기본 Python 계산의 PL 그래프는 세로축을 **Emission intensity (a.u.)**로 표시합니다. `pl_spectrum.csv`의 세기 열도 `intensity [a.u.]`, `pl_summary.json`의 `intensity_unit`도 `a.u.`입니다. **a.u.는 arbitrary units(임의 단위)**로, 계산된 상대 발광 세기를 나타내며 각 스펙트럼의 최대값을 자동으로 1로 정규화하지 않습니다.
+
+이전에 생성한 스펙트럼이나 외부 데이터의 상대 단위 `relative/nm`도 그래프·CSV·요약 JSON 출력 시 `a.u.`로 표시합니다. 세기 배열은 변경하지 않습니다.
 
 이 표기는 다음 InGaN/GaN QW 논문의 PL 그래프를 참고했습니다.
 
