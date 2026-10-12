@@ -9,6 +9,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from .spectrum_normalization import NORMALIZATION_KEYS, normalize_relative_spectrum
+
 
 class PeakAnalyzer:
     """Keep wavelength-spectrum peaks separate from level-spacing estimates."""
@@ -37,10 +39,9 @@ class PeakAnalyzer:
         unit = source.get("intensity_unit")
         if not isinstance(unit, str) or not unit.strip():
             raise ValueError("A declared emission intensity unit is required.")
-        # Old spectrum mappings may still carry the relative density label.
-        # Canonicalize it at the shared PNG/CSV/JSON output boundary as well.
-        if unit.strip() in {"relative", "relative/nm", "a.u./nm"}:
-            unit = "a.u."
+        source = normalize_relative_spectrum(source)
+        y = np.asarray(source["intensity"], dtype=float)
+        unit = source["intensity_unit"]
         return x, y, unit, source
 
     @classmethod
@@ -158,7 +159,7 @@ class PeakAnalyzer:
         """Report the sampled global wavelength maximum; ties choose the first."""
         x, y, unit, source = self._spectrum(spectrum)
         index = int(np.argmax(y))
-        return {
+        peak = {
             "wavelength_nm": float(x[index]), "energy_ev": self.HC_EV_NM / float(x[index]),
             "intensity": float(y[index]), "intensity_unit": unit, "peak_index": index,
             "fwhm_nm": self.calculate_fwhm(source, index),
@@ -166,6 +167,8 @@ class PeakAnalyzer:
             "peak_method": "sampled_global_maximum_first_tie",
             "fwhm_method": "contiguous_half_maximum_linear_interpolation_no_baseline_subtraction",
         }
+        peak.update({key: source[key] for key in NORMALIZATION_KEYS if key in source})
+        return peak
 
     def plot_pl_spectrum(self, path: str | Path, spectrum: Mapping[str, Any] | None = None) -> Path:
         """Save the wavelength spectrum and annotate its sampled maximum."""
@@ -189,7 +192,7 @@ class PeakAnalyzer:
         return destination
 
     def export_csv(self, path: str | Path, spectrum: Mapping[str, Any] | None = None) -> Path:
-        """Save the same wavelength density used for peak analysis."""
+        """Save the same prepared intensity used for the plot and peak analysis."""
         x, y, unit, _ = self._spectrum(spectrum)
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)

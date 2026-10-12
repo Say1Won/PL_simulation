@@ -10,6 +10,8 @@ from zipfile import BadZipFile
 
 import numpy as np
 
+from .spectrum_normalization import normalize_relative_spectrum
+
 
 class QWResults:
     """Post-process native results or explicitly mapped external output files.
@@ -435,10 +437,8 @@ class QWResults:
         wavelength peak can differ from the energy-spectrum peak.
         """
         if "spectrum" in self._data:
-            spectrum = self._data["spectrum"]
-            if spectrum.get("intensity_unit", "").strip() in {"relative", "relative/nm", "a.u./nm"}:
-                spectrum = {**spectrum, "intensity_unit": "a.u."}
-                self._data["spectrum"] = spectrum
+            spectrum = normalize_relative_spectrum(self._data["spectrum"])
+            self._data["spectrum"] = spectrum
             return spectrum
         spec = self._spec("spectrum")
         if spec.get("axis_container", "coords") not in ("coords", "variables"):
@@ -485,8 +485,6 @@ class QWResults:
             raise ValueError("Spectrum mapping axis_kind must be 'wavelength' or 'energy'.")
         if not intensity_unit:
             raise ValueError("The emission intensity unit must be present or explicitly configured.")
-        if intensity_unit.strip() in {"relative", "relative/nm", "a.u./nm"}:
-            intensity_unit = "a.u."
         wavelength, intensity = self._sort_rows(wavelength, intensity)
         result = {
             "wavelength_nm": wavelength, "intensity": intensity,
@@ -495,6 +493,7 @@ class QWResults:
             "spectral_density": bool(spec.get("spectral_density", False)),
             "conversion": conversion, "source": str(spec.get("path", spec.get("glob"))),
         }
+        result = normalize_relative_spectrum(result)
         self._data["spectrum"] = result
         return result
 

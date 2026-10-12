@@ -80,9 +80,12 @@ class CommandLineIntegrationTests(unittest.TestCase):
         self.assertGreater(len(values), 100)
         self.assertTrue(np.all(np.diff(values[:, 0]) > 0))
         self.assertTrue(np.all(values[:, 1] >= 0))
-        self.assertGreater(max(values[:, 1]), 0)
+        self.assertEqual(max(values[:, 1]), 1)
         summary = self.load_summary()
         self.assertEqual(summary["intensity_unit"], "a.u.")
+        self.assertEqual(summary["intensity"], 1)
+        self.assertEqual(summary["intensity_normalization"], "divide_by_wavelength_maximum")
+        self.assertGreater(summary["normalization_reference_intensity"], 0)
         self.assertEqual(summary["calculation_metadata"]["energy_intensity_unit"], "a.u.")
         self.assertGreater(summary["energy_ev"], 2)
         self.assertLess(summary["energy_ev"], 4)
@@ -110,7 +113,8 @@ class CommandLineIntegrationTests(unittest.TestCase):
         self.assertEqual(first_csv.read_bytes(), original_csv)
         self.assertEqual((self.output_root / "run_002/analysis/pl_spectrum.csv").read_bytes(), original_csv)
         reloaded_summary = self.load_summary(2)
-        for quantity in ("wavelength_nm", "energy_ev", "fwhm_nm"):
+        for quantity in ("wavelength_nm", "energy_ev", "fwhm_nm", "intensity",
+                         "intensity_normalization", "normalization_reference_intensity"):
             self.assertEqual(reloaded_summary[quantity], original_summary[quantity])
 
     def test_native_archive_without_signal_cannot_report_a_peak(self):

@@ -87,7 +87,7 @@ class NativeResultsTests(unittest.TestCase):
         np.testing.assert_array_equal(result.load_band_edges()["position_nm"], expected_position)
         self.assertEqual(result.metadata["nested"]["temperature_k"], 300)
 
-    def test_native_wavelength_density_conserves_energy_spectrum_signal(self):
+    def test_normalized_native_spectrum_retains_scale_and_conserves_raw_signal(self):
         calculation = calculation_fixture()
         result = QWResults.from_calculation(calculation)
         spectrum = result.load_spectrum()
@@ -96,13 +96,19 @@ class NativeResultsTests(unittest.TestCase):
         self.assertTrue(np.all(np.diff(wavelength) > 0))
         self.assertEqual(spectrum["intensity_unit"], "a.u.")
         self.assertEqual(spectrum["source_axis"], "energy")
+        self.assertEqual(float(np.max(intensity)), 1)
+        reference = spectrum["normalization_reference_intensity"]
+        raw_intensity = intensity * reference
         # Constant density per eV must be transformed, not merely relabelled.
-        np.testing.assert_allclose(intensity, QWResults.HC_EV_NM / wavelength**2)
+        np.testing.assert_allclose(raw_intensity, QWResults.HC_EV_NM / wavelength**2)
         energy_integral = float(np.trapezoid(calculation["energy_intensity"],
                                             calculation["energy_ev"]))
-        wavelength_integral = float(np.trapezoid(intensity, wavelength))
+        wavelength_integral = float(np.trapezoid(raw_intensity, wavelength))
         self.assertAlmostEqual(wavelength_integral, energy_integral, places=5)
         self.assertGreater(intensity[0], intensity[-1])
+        again = result.load_spectrum()
+        self.assertEqual(again["normalization_reference_intensity"], reference)
+        np.testing.assert_array_equal(again["intensity"], intensity)
 
     def test_native_factory_archive_and_loaders_work_without_nextnanopy(self):
         with patch.dict("sys.modules", {"nextnanopy": None}):
@@ -133,7 +139,7 @@ class NativeResultsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "energy_density_axis_unit"):
             QWResults.from_calculation(calculation)
 
-    def test_cached_relative_spectrum_loads_in_arbitrary_units_without_rescaling(self):
+    def test_cached_relative_spectrum_is_normalized_and_physical_units_preserved(self):
         for old_unit, expected_unit in (
             ("relative/nm", "a.u."), ("a.u./nm", "a.u."), ("W/nm", "W/nm"),
         ):
@@ -144,7 +150,8 @@ class NativeResultsTests(unittest.TestCase):
                 original_intensity = spectrum["intensity"].copy()
                 loaded = result.load_spectrum()
                 self.assertEqual(loaded["intensity_unit"], expected_unit)
-                np.testing.assert_array_equal(loaded["intensity"], original_intensity)
+                expected = original_intensity / max(original_intensity) if expected_unit == "a.u." else original_intensity
+                np.testing.assert_array_equal(loaded["intensity"], expected)
 
     def test_object_metadata_or_array_is_rejected_without_pickle(self):
         calculation = calculation_fixture()

@@ -4,7 +4,7 @@ Python으로 **Quantum well 밴드·고유준위 그래프**와 **상대 PL 스�
 
 현재 계산은 **c-plane, unstrained 1D 단일 밴드 유효질량 모델**입니다. 전자와 정공의 구속 상태를 직접 풀고, 실제 envelope overlap과 캐리어 점유에서 발광 스펙트럼을 계산합니다. 실험값과 자동으로 일치시키거나 절대 PL 세기를 예측하는 모델은 아닙니다.
 
-**발광 세기 단위는 a.u.입니다.** 계산 코드의 `energy_intensity_unit`, 저장 아카이브, PL 그래프, CSV와 요약 JSON 모두 같은 표기를 사용합니다.
+**PL 그래프·CSV·요약 JSON은 최대 세기를 1로 정규화한 a.u. 값을 사용합니다.** 원래 계산값은 아카이브에 보관합니다.
 
 ## 설치 및 실행
 
@@ -80,6 +80,7 @@ PL_simulation/
 │   ├── quantum_well_simulation.py
 │   ├── qw_results.py
 │   ├── peak_analyzer.py
+│   ├── spectrum_normalization.py
 │   └── material_parameters.py
 ├── configs/
 │   ├── single_qw.json
@@ -159,16 +160,18 @@ outputs/run_001/
 
 `quantum_well.png`에는 밴드와 계산한 전자·valence 전자 고유준위를 함께 표시합니다. 정공 quasiparticle 고유에너지를 valence 전자 에너지로 변환해 같은 기준에서 표시합니다. `--include-wavefunctions`의 세로 크기는 표시용 스케일입니다.
 
-기본 Python 계산의 PL 그래프는 세로축을 **Emission intensity (a.u.)**로 표시합니다. `pl_spectrum.csv`의 세기 열도 `intensity [a.u.]`, `pl_summary.json`의 `intensity_unit`도 `a.u.`입니다. **a.u.는 arbitrary units(임의 단위)**로, 계산된 상대 발광 세기를 나타내며 각 스펙트럼의 최대값을 자동으로 1로 정규화하지 않습니다.
+기본 Python 계산의 PL 그래프는 세로축을 **Emission intensity (a.u.)**로 표시하며, 파장 스펙트럼의 세기를 **`I_normalized(λ) = I(λ) / max(I(λ))`**로 계산합니다. 따라서 최대 세기는 **1**입니다. `pl_spectrum.csv`와 `pl_summary.json`도 같은 정규화 값을 사용합니다. **a.u.는 arbitrary units(임의 단위)**입니다.
 
-이전에 생성한 스펙트럼이나 외부 데이터의 상대 단위 `relative/nm`도 그래프·CSV·요약 JSON 출력 시 `a.u.`로 표시합니다. 세기 배열은 변경하지 않습니다.
+이전에 생성한 스펙트럼이나 외부 데이터의 상대 단위 `relative/nm`도 동일하게 정규화합니다. 각 스펙트럼을 자체 최대값으로 나누므로 피크 위치·FWHM·모양은 유지하지만, In 비율에 따른 전체 발광 세기 차이는 정규화 출력에서 비교할 수 없습니다.
 
-이 표기는 다음 InGaN/GaN QW 논문의 PL 그래프를 참고했습니다.
+`a.u.` 표기는 다음 InGaN/GaN QW 논문의 PL 그래프를 참고했습니다. 피크를 1로 맞추는 정규화는 이 프로그램의 출력 규칙이며, `a.u.` 표기 자체가 요구하는 규칙은 아닙니다.
 
 - Okamoto et al., *Surface-plasmon-enhanced light emitters based on InGaN quantum wells*, Nature Materials 3, 601–605 (2004), [DOI:10.1038/nmat1198](https://doi.org/10.1038/nmat1198), Fig. 1(b): `PL intensity (a.u.)`와 파장(nm).
 - Li et al., *Room temperature green light emission from nonpolar cubic InGaN/GaN multi-quantum-wells*, Applied Physics Letters 90, 071903 (2007), [DOI:10.1063/1.2475564](https://doi.org/10.1063/1.2475564), Fig. 2: `PL intensity (a.u.)`와 에너지(eV).
 
-계산 코드와 아카이브의 `energy_intensity_unit`도 `a.u.`입니다. 에너지 밀도의 기준 좌표는 별도 metadata인 `energy_density_axis_unit: "eV"`에 기록합니다. 파장 변환에는 `|dE/dλ|=hc/λ²`를 적용하며 스펙트럼 값·peak·FWHM은 유지합니다. 이전 상대 단위로 저장한 아카이브는 읽을 때 `a.u.` metadata로 변환합니다. 외부 데이터에 명시한 물리 단위는 유지합니다.
+파장 변환의 `|dE/dλ|=hc/λ²`를 적용한 **뒤에** 최대 세기로 나눕니다. 요약 JSON의 `intensity_normalization`은 `divide_by_wavelength_maximum`이며, `normalization_reference_intensity`와 `normalization_reference_unit`에 정규화 전 파장 최대값과 단위를 기록합니다. 정규화 값에 이 최대값을 곱하면 정규화 전 세기를 복원할 수 있습니다.
+
+아카이브의 원래 `energy_intensity`는 정규화하지 않고 보관하며, 재분석 시 같은 정규화 결과를 생성합니다. `energy_intensity_unit`은 `a.u.`, 에너지 밀도의 기준 좌표는 `energy_density_axis_unit: "eV"`입니다. 외부 데이터에 명시한 물리 단위는 유지합니다.
 
 실험과의 peak·선폭·스펙트럼 모양 비교에는 CSV와 `pl_summary.json`을 사용하세요. 실험의 파장축·에너지축과 밀도 단위를 맞추고, 세기를 정규화했다면 동일한 정규화 방식을 적용하세요. 비교용 외부 solver 실행이나 실험 데이터 자동 fitting은 포함하지 않습니다.
 

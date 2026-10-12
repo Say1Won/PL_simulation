@@ -151,6 +151,7 @@ class PeakNumericalTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             directory = Path(temporary)
             for original_unit, expected_unit in (
+                ("a.u.", "a.u."),
                 ("relative/nm", "a.u."), ("relative", "a.u."),
                 ("a.u./nm", "a.u."), ("W/nm", "W/nm"),
                 ("test_rate/nm", "test_rate/nm"),
@@ -160,8 +161,13 @@ class PeakNumericalTests(unittest.TestCase):
                     original["intensity_unit"] = original_unit
                     analyzer = PeakAnalyzer(original)
                     peak = analyzer.find_spectrum_peak()
+                    reference = 10 if expected_unit == "a.u." else 1
+                    expected_intensity = np.asarray(original["intensity"], dtype=float) / reference
                     self.assertEqual(peak["intensity_unit"], expected_unit)
-                    self.assertEqual(peak["intensity"], 10)
+                    self.assertEqual(peak["intensity"], max(expected_intensity))
+                    if expected_unit == "a.u.":
+                        self.assertEqual(peak["normalization_reference_intensity"], 10)
+                        self.assertEqual(analyzer.find_spectrum_peak(), peak)
                     self.assertEqual(peak["wavelength_nm"], 402)
                     with patch.object(Figure, "savefig", autospec=True) as save:
                         analyzer.plot_pl_spectrum(directory / "pl.png")
@@ -169,16 +175,35 @@ class PeakNumericalTests(unittest.TestCase):
                     self.assertEqual(figure.axes[0].get_ylabel(),
                                      f"Emission intensity ({expected_unit})")
                     np.testing.assert_array_equal(figure.axes[0].lines[0].get_ydata(),
-                                                  original["intensity"])
+                                                  expected_intensity)
                     csv_path = analyzer.export_csv(directory / "pl.csv")
                     with csv_path.open(newline="", encoding="utf-8") as stream:
                         rows = list(csv.reader(stream))
                     self.assertEqual(rows[0], ["wavelength_nm", f"intensity [{expected_unit}]"])
                     np.testing.assert_array_equal(np.asarray(rows[1:], dtype=float)[:, 1],
-                                                  original["intensity"])
+                                                  expected_intensity)
                     summary = json.loads(analyzer.export_summary(directory / "pl.json").read_text())
                     self.assertEqual(summary["intensity_unit"], expected_unit)
+                    self.assertEqual(summary["intensity"], max(expected_intensity))
+                    if expected_unit == "a.u.":
+                        self.assertEqual(summary["normalization_reference_intensity"], 10)
+                        self.assertEqual(summary["normalization_reference_unit"], original_unit)
                     self.assertEqual(original["intensity_unit"], original_unit)
+                    self.assertEqual(original["intensity"], [0, 4, 10, 2, 0])
+
+    def test_relative_normalization_preserves_shape_and_fwhm_over_scales(self):
+        wavelengths = [400, 401, 403, 407, 409]
+        intensities = np.array([0, 3, 10, 2, 0], dtype=float)
+        expected_width = PeakAnalyzer(spectrum(wavelengths, intensities)).calculate_fwhm()
+        for scale in (1e-200, 1, 1e200):
+            with self.subTest(scale=scale):
+                original = spectrum(wavelengths, intensities * scale)
+                original["intensity_unit"] = "a.u."
+                peak = PeakAnalyzer(original).find_spectrum_peak()
+                self.assertEqual(peak["intensity"], 1)
+                self.assertEqual(peak["wavelength_nm"], 403)
+                self.assertAlmostEqual(peak["fwhm_nm"], expected_width)
+                self.assertEqual(peak["normalization_reference_intensity"], 10 * scale)
 
     def test_fwhm_interpolates_nonuniform_grid_crossings(self):
         analyzer = PeakAnalyzer(spectrum([400, 401, 403, 407, 409], [0, 3, 10, 2, 0]))
