@@ -193,6 +193,80 @@ class CommandLineIntegrationTests(unittest.TestCase):
         self.assertIn("cannot be used with --results-dir", completed.stderr)
         self.assertFalse(self.output_root.exists())
 
+    def test_well_thickness_changes_geometry_eigenvalues_and_pl(self):
+        source_path = ROOT / "configs/single_qw.json"
+        original_bytes = source_path.read_bytes()
+        summaries, electron_ground_states = [], []
+        for run_number, thickness in enumerate((3.0, 4.0), start=1):
+            with self.subTest(thickness=thickness):
+                completed = self.invoke("--indium-fraction", "0.20",
+                                        "--well-thickness-nm", str(thickness))
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                run = self.output_root / f"run_{run_number:03d}"
+                expected = json.loads(original_bytes)
+                expected["layers"][1].update(indium_fraction=0.20, thickness_nm=thickness)
+                self.assertEqual(json.loads((run / "inputs/single_qw.json").read_text()), expected)
+                self.assertEqual(json.loads((run / "inputs/run.json").read_text())["structure"], expected)
+                summary = self.load_summary(run_number)
+                self.assertEqual(summary["calculation_metadata"]["structure"], expected)
+                self.assertEqual(summary["intensity"], 1)
+                self.assertEqual(summary["intensity_unit"], "a.u.")
+                self.assertFalse(summary["peak_at_boundary"])
+                self.assertTrue((run / "figures/quantum_well.png").is_file())
+                with np.load(run / "calculation/result.npz", allow_pickle=False) as archive:
+                    metadata = json.loads(str(archive["metadata_json"]))
+                    self.assertEqual(metadata["structure"], expected)
+                    layer = metadata["material_profiles"]["layers"][1]
+                    self.assertEqual(layer["thickness_nm"], thickness)
+                    self.assertAlmostEqual(layer["end_nm"] - layer["start_nm"], thickness)
+                    self.assertAlmostEqual(float(archive["position_nm"][-1]),
+                                           sum(item["thickness_nm"] for item in expected["layers"]))
+                    electron_ground_states.append(float(archive["electron_energies_ev"][0]))
+                self.assertEqual(source_path.read_bytes(), original_bytes)
+                summaries.append(summary)
+        self.assertLess(electron_ground_states[1], electron_ground_states[0])
+        self.assertGreater(summaries[1]["wavelength_nm"], summaries[0]["wavelength_nm"])
+
+    def test_well_overrides_can_be_independent_and_prepare_only_preserves_custom_defaults(self):
+        structure = json.loads((ROOT / "configs/single_qw.json").read_text())
+        structure["layers"][1].update(indium_fraction=0.31, thickness_nm=5.5)
+        structure_path = self.directory / "custom_geometry.json"
+        original_bytes = json.dumps(structure).encode()
+        structure_path.write_bytes(original_bytes)
+        cases = (
+            ((), 0.31, 5.5),
+            (("--well-thickness-nm", "4.2"), 0.31, 4.2),
+            (("--indium-fraction", "0.25"), 0.25, 5.5),
+            (("--indium-fraction", "0.25", "--well-thickness-nm", "4.2"), 0.25, 4.2),
+        )
+        for run_number, (arguments, fraction, thickness) in enumerate(cases, start=1):
+            with self.subTest(arguments=arguments):
+                completed = self.invoke("--structure", str(structure_path), "--prepare-only", *arguments)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                run = self.output_root / f"run_{run_number:03d}"
+                expected = json.loads(original_bytes)
+                expected["layers"][1].update(indium_fraction=fraction, thickness_nm=thickness)
+                self.assertEqual(json.loads((run / "inputs/single_qw.json").read_text()), expected)
+                self.assertFalse((run / "calculation").exists())
+                self.assertEqual(structure_path.read_bytes(), original_bytes)
+
+    def test_invalid_well_thickness_fails_before_allocating_outputs(self):
+        for thickness in ("0", "-1", "nan", "inf", "-inf"):
+            with self.subTest(thickness=thickness):
+                completed = self.invoke(f"--well-thickness-nm={thickness}", "--prepare-only")
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn("thickness_nm", completed.stderr)
+                self.assertFalse(self.output_root.exists())
+
+    def test_well_thickness_cannot_override_archived_results(self):
+        for arguments in (("--well-thickness-nm", "4"),
+                          ("--well-thickness-nm", "4", "--indium-fraction", "0.25")):
+            with self.subTest(arguments=arguments):
+                completed = self.invoke(*arguments, "--results-dir", str(self.directory))
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn("cannot be used with --results-dir", completed.stderr)
+                self.assertFalse(self.output_root.exists())
+
     def test_native_archive_without_signal_cannot_report_a_peak(self):
         original = self.invoke()
         self.assertEqual(original.returncode, 0, original.stderr)

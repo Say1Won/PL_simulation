@@ -57,6 +57,10 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         "--indium-fraction", type=float, metavar="X",
         help="Override only the QW In mole fraction (0 < X <= 1; e.g. 0.25 means 25%%).",
     )
+    parser.add_argument(
+        "--well-thickness-nm", type=float, metavar="NM",
+        help="Override only the QW thickness in nm (positive and finite).",
+    )
     parser.add_argument("--settings", type=Path, default=PROJECT_ROOT / "configs/simulation.json")
     parser.add_argument("--materials", type=Path, default=PROJECT_ROOT / "configs/materials.json")
     parser.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "outputs")
@@ -74,11 +78,16 @@ def main(argv: list[str] | None = None) -> int:
     manifest: dict[str, Any] = {}
     try:
         structure = SingleQWStructure.from_dict(read_json(arguments.structure))
+        well_overrides = {}
         if arguments.indium_fraction is not None:
+            well_overrides["indium_fraction"] = arguments.indium_fraction
+        if arguments.well_thickness_nm is not None:
+            well_overrides["thickness_nm"] = arguments.well_thickness_nm
+        if well_overrides:
             if arguments.results_dir is not None:
-                raise ValueError("--indium-fraction cannot be used with --results-dir; run a new calculation to change composition.")
+                raise ValueError("QW overrides (--indium-fraction, --well-thickness-nm) cannot be used with --results-dir; run a new calculation to change the well.")
             left_barrier, well, right_barrier = structure.layers
-            well = replace(well, indium_fraction=arguments.indium_fraction)
+            well = replace(well, **well_overrides)
             structure = replace(structure, layers=(left_barrier, well, right_barrier))
         configuration = read_json(arguments.settings)
         unknown = set(configuration) - {"settings", "output_files"}
@@ -179,6 +188,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Results saved: {run_directory}")
         fraction = structure.layers[1].indium_fraction
         print(f"QW In fraction: {fraction:g} ({100 * fraction:g}%)")
+        print(f"QW thickness: {structure.layers[1].thickness_nm:g} nm")
         print(f"Emission intensity unit: {summary['intensity_unit']}")
         if "intensity_normalization" in summary:
             print(f"PL intensity normalized: peak = {summary['intensity']:.1f} a.u.")
