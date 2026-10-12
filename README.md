@@ -157,7 +157,14 @@ outputs/run_001/
 
 `quantum_well.png`에는 밴드와 계산한 전자·valence 전자 고유준위를 함께 표시합니다. 정공 quasiparticle 고유에너지를 valence 전자 에너지로 변환해 같은 기준에서 표시합니다. `--include-wavefunctions`의 세로 크기는 표시용 스케일입니다.
 
-`pl_spectrum.csv`는 파장(nm)과 **상대 스펙트럼 밀도 per nm**입니다. 에너지 밀도 per eV에서 `|dE/dλ|=hc/λ²`를 적용하므로 파장 peak는 에너지 peak의 단순 좌표 변환과 다를 수 있습니다. 절대 photons/s·레이저 파워 환산 값은 아닙니다.
+기본 Python 계산의 PL 그래프는 세로축을 **Emission intensity (a.u.)**로 표시합니다. `pl_spectrum.csv`의 세기 열도 `intensity [a.u.]`, `pl_summary.json`의 `intensity_unit`도 `a.u.`입니다. **a.u.는 arbitrary units(임의 단위)**로, 계산된 상대 발광 세기를 나타내며 각 스펙트럼의 최대값을 자동으로 1로 정규화하지 않습니다.
+
+이 표기는 다음 InGaN/GaN QW 논문의 PL 그래프를 참고했습니다.
+
+- Okamoto et al., *Surface-plasmon-enhanced light emitters based on InGaN quantum wells*, Nature Materials 3, 601–605 (2004), [DOI:10.1038/nmat1198](https://doi.org/10.1038/nmat1198), Fig. 1(b): `PL intensity (a.u.)`와 파장(nm).
+- Li et al., *Room temperature green light emission from nonpolar cubic InGaN/GaN multi-quantum-wells*, Applied Physics Letters 90, 071903 (2007), [DOI:10.1063/1.2475564](https://doi.org/10.1063/1.2475564), Fig. 2: `PL intensity (a.u.)`와 에너지(eV).
+
+내부 계산과 아카이브는 에너지 스펙트럼 밀도를 유지하며, 파장 변환에는 `|dE/dλ|=hc/λ²`를 적용합니다. `a.u.` 표기 변경으로 스펙트럼 값·peak·FWHM이 달라지지는 않습니다. 외부 데이터에 명시한 물리 단위는 유지합니다.
 
 실험과의 peak·선폭·스펙트럼 모양 비교에는 CSV와 `pl_summary.json`을 사용하세요. 실험의 파장축·에너지축과 밀도 단위를 맞추고, 세기를 정규화했다면 동일한 정규화 방식을 적용하세요. 비교용 외부 solver 실행이나 실험 데이터 자동 fitting은 포함하지 않습니다.
 

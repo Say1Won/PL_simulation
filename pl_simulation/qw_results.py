@@ -147,9 +147,12 @@ class QWResults:
         wavelength, intensity = cls._sort_rows(
             wavelength, density * cls.HC_EV_NM / wavelength**2,
         )
+        # Use conventional PL arbitrary units for relative spectra while
+        # preserving explicitly declared physical units and archive densities.
+        intensity_unit = "a.u." if unit in {"relative/eV", "a.u./eV"} else unit[:-3] + "/nm"
         instance._data["spectrum"] = {
             "wavelength_nm": wavelength, "intensity": intensity,
-            "intensity_unit": unit[:-3] + "/nm", "axis": "wavelength", "axis_unit": "nm",
+            "intensity_unit": intensity_unit, "axis": "wavelength", "axis_unit": "nm",
             "source_axis": "energy", "source_axis_unit": "eV", "spectral_density": True,
             "conversion": "intensity_per_eV * hc_eV_nm / wavelength_nm**2",
             "source": "native_calculation",

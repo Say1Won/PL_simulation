@@ -93,7 +93,7 @@ class NativeResultsTests(unittest.TestCase):
         wavelength = spectrum["wavelength_nm"]
         intensity = spectrum["intensity"]
         self.assertTrue(np.all(np.diff(wavelength) > 0))
-        self.assertEqual(spectrum["intensity_unit"], "relative/nm")
+        self.assertEqual(spectrum["intensity_unit"], "a.u.")
         self.assertEqual(spectrum["source_axis"], "energy")
         # Constant density per eV must be transformed, not merely relabelled.
         np.testing.assert_allclose(intensity, QWResults.HC_EV_NM / wavelength**2)
