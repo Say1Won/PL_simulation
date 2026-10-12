@@ -108,6 +108,8 @@ class NativeCalculationTests(unittest.TestCase):
         self.assertGreater(min(result["valence_energies_ev"]),
                            max(result["valence_ev"][[0, -1]]))
         emission = result["energy_intensity"]
+        self.assertEqual(result["metadata"]["energy_intensity_unit"], "a.u.")
+        self.assertEqual(result["metadata"]["energy_density_axis_unit"], "eV")
         self.assertTrue(np.all(np.isfinite(emission)))
         self.assertTrue(np.all(emission >= 0))
         self.assertGreater(np.max(emission), 0)

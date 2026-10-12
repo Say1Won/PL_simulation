@@ -83,6 +83,7 @@ class CommandLineIntegrationTests(unittest.TestCase):
         self.assertGreater(max(values[:, 1]), 0)
         summary = self.load_summary()
         self.assertEqual(summary["intensity_unit"], "a.u.")
+        self.assertEqual(summary["calculation_metadata"]["energy_intensity_unit"], "a.u.")
         self.assertGreater(summary["energy_ev"], 2)
         self.assertLess(summary["energy_ev"], 4)
         self.assertGreater(summary["fwhm_nm"], 0)
@@ -93,6 +94,9 @@ class CommandLineIntegrationTests(unittest.TestCase):
             self.assertGreater(len(archive["electron_energies_ev"]), 0)
             self.assertGreater(len(archive["valence_energies_ev"]), 0)
             self.assertTrue(np.max(archive["energy_intensity"]) > 0)
+            metadata = json.loads(str(archive["metadata_json"]))
+            self.assertEqual(metadata["energy_intensity_unit"], "a.u.")
+            self.assertEqual(metadata["energy_density_axis_unit"], "eV")
 
     def test_native_archive_analysis_preserves_spectrum_without_overwriting_first_run(self):
         first = self.invoke()

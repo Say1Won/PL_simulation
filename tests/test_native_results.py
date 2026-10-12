@@ -31,7 +31,8 @@ def calculation_fixture():
         "transition_matrix": np.array([[1 + 2j, 0], [0, 3 - 4j]]),
         "metadata": {
             "energy_reference": "GaN_unstrained_VBM",
-            "energy_intensity_unit": "relative/eV",
+            "energy_intensity_unit": "a.u.",
+            "energy_density_axis_unit": "eV",
             "model": "arithmetic_test_fixture",
             "nested": {"temperature_k": 300, "orientation": [0, 0, 1]},
         },
@@ -111,6 +112,26 @@ class NativeResultsTests(unittest.TestCase):
             for loader in (restored.load_band_edges, restored.load_states,
                            restored.load_wavefunctions, restored.load_spectrum):
                 self.assertTrue(loader())
+
+    def test_old_relative_archive_units_are_upgraded_without_changing_signal(self):
+        current = QWResults.from_calculation(calculation_fixture()).load_spectrum()
+        for old_unit in ("relative/eV", "a.u./eV"):
+            with self.subTest(unit=old_unit):
+                calculation = calculation_fixture()
+                calculation["metadata"]["energy_intensity_unit"] = old_unit
+                del calculation["metadata"]["energy_density_axis_unit"]
+                result = QWResults.from_calculation(calculation)
+                archive = result.save_calculation(self.directory / f"upgraded_{old_unit.split('/')[0]}.npz")
+                restored = QWResults.from_archive(archive)
+                self.assertEqual(restored.metadata["energy_intensity_unit"], "a.u.")
+                self.assertEqual(restored.metadata["energy_density_axis_unit"], "eV")
+                np.testing.assert_array_equal(restored.load_spectrum()["intensity"], current["intensity"])
+
+    def test_arbitrary_unit_energy_spectrum_rejects_an_incorrect_density_axis(self):
+        calculation = calculation_fixture()
+        calculation["metadata"]["energy_density_axis_unit"] = "meV"
+        with self.assertRaisesRegex(ValueError, "energy_density_axis_unit"):
+            QWResults.from_calculation(calculation)
 
     def test_cached_relative_spectrum_loads_in_arbitrary_units_without_rescaling(self):
         for old_unit, expected_unit in (

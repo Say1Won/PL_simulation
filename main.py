@@ -157,12 +157,13 @@ def main(argv: list[str] | None = None) -> int:
             "calculation_engine": manifest["calculation_engine"],
             "source": str(source),
             "calculation_metadata": results.metadata if native else {},
-            "intensity_interpretation": "relative_spectral_density" if native else "configured_legacy_units",
+            "intensity_interpretation": "relative_PL_intensity_arbitrary_units" if native else "configured_legacy_units",
         })
         write_json(run_directory / "analysis/pl_summary.json", summary)
         manifest["status"] = "completed"
         write_json(snapshots / "run.json", manifest)
         print(f"Results saved: {run_directory}")
+        print(f"Emission intensity unit: {summary['intensity_unit']}")
         print(f"PL peak: {summary['wavelength_nm']:.3f} nm ({summary['energy_ev']:.4f} eV)")
         return 0
     except (ValueError, KeyError, OSError, RuntimeError, ImportError) as error:

@@ -72,9 +72,18 @@ class QWResults:
         reference = metadata.setdefault("energy_reference", "unstrained_GaN_VBM")
         if not isinstance(reference, str) or not reference.strip():
             raise ValueError("Calculation metadata requires a shared nonempty energy_reference.")
-        unit = metadata.setdefault("energy_intensity_unit", "relative/eV")
-        if not isinstance(unit, str) or not unit.endswith("/eV") or unit == "/eV":
-            raise ValueError("energy_intensity_unit must explicitly describe density per eV.")
+        unit = metadata.setdefault("energy_intensity_unit", "a.u.")
+        if unit in ("relative/eV", "a.u./eV"):
+            # Upgrade the unit metadata of older relative calculation archives.
+            unit = metadata["energy_intensity_unit"] = "a.u."
+        if unit == "a.u.":
+            density_axis_unit = metadata.setdefault("energy_density_axis_unit", "eV")
+        elif isinstance(unit, str) and unit.endswith("/eV") and unit != "/eV":
+            density_axis_unit = metadata.get("energy_density_axis_unit", "eV")
+        else:
+            raise ValueError("energy_intensity_unit must be a.u. or an explicit density unit per eV.")
+        if density_axis_unit != "eV":
+            raise ValueError("energy_density_axis_unit must be eV for the energy_ev spectrum.")
 
         arrays: dict[str, np.ndarray] = {}
         for key, values in calculation.items():
@@ -149,7 +158,7 @@ class QWResults:
         )
         # Use conventional PL arbitrary units for relative spectra while
         # preserving explicitly declared physical units and archive densities.
-        intensity_unit = "a.u." if unit in {"relative/eV", "a.u./eV"} else unit[:-3] + "/nm"
+        intensity_unit = "a.u." if unit == "a.u." else unit[:-3] + "/nm"
         instance._data["spectrum"] = {
             "wavelength_nm": wavelength, "intensity": intensity,
             "intensity_unit": intensity_unit, "axis": "wavelength", "axis_unit": "nm",

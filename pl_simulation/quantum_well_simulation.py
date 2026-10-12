@@ -304,7 +304,8 @@ class QuantumWellSimulation:
         metadata = {
             "model": "1D_scalar_effective_mass_bound_subband_relative_PL",
             "energy_reference": profiles.get("metadata", {}).get("energy_reference", "unstrained_GaN_VBM"),
-            "energy_intensity_unit": "relative/eV",
+            "energy_intensity_unit": "a.u.",
+            "energy_density_axis_unit": "eV",
             "excitation_model": "prescribed_electron_and_hole_sheet_densities",
             "boundary_condition": "Dirichlet_zero_envelopes_at_outer_barrier_edges",
             "actual_grid_spacing_nm": dx,
