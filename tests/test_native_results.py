@@ -112,6 +112,19 @@ class NativeResultsTests(unittest.TestCase):
                            restored.load_wavefunctions, restored.load_spectrum):
                 self.assertTrue(loader())
 
+    def test_cached_relative_spectrum_loads_in_arbitrary_units_without_rescaling(self):
+        for old_unit, expected_unit in (
+            ("relative/nm", "a.u."), ("a.u./nm", "a.u."), ("W/nm", "W/nm"),
+        ):
+            with self.subTest(unit=old_unit):
+                result = QWResults.from_calculation(calculation_fixture())
+                spectrum = result.load_spectrum()
+                spectrum["intensity_unit"] = old_unit
+                original_intensity = spectrum["intensity"].copy()
+                loaded = result.load_spectrum()
+                self.assertEqual(loaded["intensity_unit"], expected_unit)
+                np.testing.assert_array_equal(loaded["intensity"], original_intensity)
+
     def test_object_metadata_or_array_is_rejected_without_pickle(self):
         calculation = calculation_fixture()
         payload = {key: value for key, value in calculation.items() if key != "metadata"}
