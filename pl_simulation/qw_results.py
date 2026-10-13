@@ -86,6 +86,13 @@ class QWResults:
             raise ValueError("energy_intensity_unit must be a.u. or an explicit density unit per eV.")
         if density_axis_unit != "eV":
             raise ValueError("energy_density_axis_unit must be eV for the energy_ev spectrum.")
+        pl_status = metadata.get("pl_status")
+        if "pl_status" in metadata and pl_status not in (
+            "calculated", "no_bound_transitions", "no_signal_in_window",
+        ):
+            raise ValueError("pl_status must be calculated, no_bound_transitions, or no_signal_in_window.")
+        if "pl_message" in metadata and not isinstance(metadata["pl_message"], str):
+            raise ValueError("pl_message must be a string.")
 
         arrays: dict[str, np.ndarray] = {}
         for key, values in calculation.items():
@@ -118,17 +125,21 @@ class QWResults:
             ("valence_energies_ev", "hole_wavefunctions"),
         ):
             energies = arrays[energy_key]
-            if energies.ndim != 1 or energies.size == 0:
-                raise ValueError(f"{energy_key} must be a nonempty one-dimensional array.")
+            if energies.ndim != 1:
+                raise ValueError(f"{energy_key} must be a one-dimensional array.")
             waves = arrays[wave_key]
             if waves.shape != (energies.size, position.size):
                 raise ValueError(f"{wave_key} must have shape (state count, position count).")
-            if np.any(np.max(np.abs(waves), axis=1) == 0):
+            if energies.size and np.any(np.max(np.abs(waves), axis=1) == 0):
                 raise ValueError(f"{wave_key} cannot contain a zero envelope.")
         energy = arrays["energy_ev"]
         density = arrays["energy_intensity"]
         if np.any(energy <= 0) or density.shape != energy.shape or np.any(density < 0):
             raise ValueError("Energy spectrum requires positive energies and matching nonnegative density.")
+        if pl_status in ("no_bound_transitions", "no_signal_in_window") and np.any(density > 0):
+            raise ValueError("A no-signal pl_status requires an all-zero energy spectrum.")
+        if any(arrays[key].size == 0 for key in ("electron_energies_ev", "valence_energies_ev")) and np.any(density > 0):
+            raise ValueError("A spectrum without electron or valence states cannot contain emission.")
 
         instance = cls(Path.cwd())
         instance._metadata = metadata
@@ -168,6 +179,10 @@ class QWResults:
             "conversion": "intensity_per_eV * hc_eV_nm / wavelength_nm**2",
             "source": "native_calculation",
         }
+        if pl_status is not None:
+            instance._data["spectrum"]["signal_status"] = pl_status
+        if "pl_message" in metadata:
+            instance._data["spectrum"]["signal_message"] = metadata["pl_message"]
         return instance
 
     def save_calculation(self, path: str | Path) -> Path:
@@ -540,6 +555,7 @@ class QWResults:
             waves = self._data.get("wavefunctions") or self.load_wavefunctions()
             span = float(np.ptp(np.concatenate((bands["conduction_ev"], bands["valence_ev"]))))
             scale = 0.04 * max(span, 1.0)
+            displayed_wavefunctions = False
             for kind, group in waves.items():
                 energies = states[f"{kind}_ev"]
                 if len(energies) != len(group["values"]):
@@ -549,7 +565,9 @@ class QWResults:
                     if peak == 0:
                         raise ValueError("A zero wavefunction cannot be scaled for visualization.")
                     ax.plot(group["position_nm"], energy + scale * values / peak, linewidth=1, alpha=0.8)
-            ax.text(0.02, 0.02, "Wavefunction/probability display uses arbitrary vertical scaling", transform=ax.transAxes, fontsize=8)
+                    displayed_wavefunctions = True
+            if displayed_wavefunctions:
+                ax.text(0.02, 0.02, "Wavefunction/probability display uses arbitrary vertical scaling", transform=ax.transAxes, fontsize=8)
         ax.set(xlabel="Position (nm)", ylabel="Energy (eV)", title="Single quantum well")
         ax.grid(alpha=0.2)
         ax.legend(fontsize=8)

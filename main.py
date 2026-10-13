@@ -55,7 +55,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--structure", type=Path, default=PROJECT_ROOT / "configs/single_qw.json")
     parser.add_argument(
         "--indium-fraction", type=float, metavar="X",
-        help="Override only the QW In mole fraction (0 < X <= 1; e.g. 0.25 means 25%%).",
+        help="Override only the central layer In mole fraction (0 <= X <= 1; e.g. 0.25 means 25%%).",
     )
     parser.add_argument(
         "--well-thickness-nm", type=float, metavar="NM",
@@ -178,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
             "source": str(source),
             "calculation_metadata": results.metadata if native else {},
             "intensity_interpretation": (
+                "zero_bound_state_PL_intensity" if not summary["has_signal"] else
                 "peak_normalized_relative_PL_intensity"
                 if "intensity_normalization" in summary else "configured_legacy_units"
             ),
@@ -192,7 +193,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Emission intensity unit: {summary['intensity_unit']}")
         if "intensity_normalization" in summary:
             print(f"PL intensity normalized: peak = {summary['intensity']:.1f} a.u.")
-        print(f"PL peak: {summary['wavelength_nm']:.3f} nm ({summary['energy_ev']:.4f} eV)")
+        if summary["has_signal"]:
+            print(f"PL peak: {summary['wavelength_nm']:.3f} nm ({summary['energy_ev']:.4f} eV)")
+        else:
+            print(f"PL intensity: 0 {summary['intensity_unit']}; peak: none")
         return 0
     except (ValueError, KeyError, OSError, RuntimeError, ImportError) as error:
         if run_directory is not None:

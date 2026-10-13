@@ -14,6 +14,9 @@ import numpy as np
 
 from pl_simulation.peak_analyzer import PeakAnalyzer
 from pl_simulation.qw_results import QWResults
+from pl_simulation.spectrum_normalization import (
+    NORMALIZATION_KEYS, NO_SIGNAL_MESSAGES, normalize_relative_spectrum,
+)
 
 
 def spectrum(wavelength, intensity):
@@ -145,6 +148,83 @@ class SpectrumFileTests(unittest.TestCase):
 
 
 class PeakNumericalTests(unittest.TestCase):
+    def test_explicit_no_signal_has_no_fabricated_peak_or_normalization(self):
+        for status, default_message in NO_SIGNAL_MESSAGES.items():
+            with self.subTest(status=status):
+                original = spectrum([400, 401, 402], [0, 0, 0])
+                original.update({
+                    "intensity_unit": "relative/nm", "signal_status": status,
+                    "signal_message": "Explicit solver explanation",
+                    "intensity_normalization": "divide_by_wavelength_maximum",
+                    "normalization_reference_intensity": 10,
+                    "normalization_reference_unit": "relative/nm",
+                })
+                prepared = normalize_relative_spectrum(original)
+                self.assertEqual(prepared["intensity_unit"], "a.u.")
+                np.testing.assert_array_equal(prepared["intensity"], [0, 0, 0])
+                self.assertFalse(any(key in prepared for key in NORMALIZATION_KEYS))
+                self.assertEqual(original["normalization_reference_intensity"], 10)
+                analyzer = PeakAnalyzer(prepared)
+                summary = analyzer.find_spectrum_peak()
+                self.assertFalse(summary["has_signal"])
+                self.assertEqual(summary["signal_status"], status)
+                self.assertEqual(summary["reason"], status)
+                self.assertEqual(summary["signal_message"], "Explicit solver explanation")
+                self.assertEqual(summary["intensity"], 0)
+                self.assertFalse(summary["peak_at_boundary"])
+                for key in ("wavelength_nm", "energy_ev", "peak_index", "fwhm_nm"):
+                    self.assertIsNone(summary[key])
+                self.assertIsNone(analyzer.calculate_fwhm())
+                self.assertFalse(any(key in summary for key in NORMALIZATION_KEYS))
+                prepared.pop("signal_message")
+                self.assertEqual(PeakAnalyzer(prepared).find_spectrum_peak()["signal_message"],
+                                 default_message)
+
+    def test_no_signal_exports_zero_csv_null_summary_and_zero_curve(self):
+        from matplotlib.figure import Figure
+
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for status in NO_SIGNAL_MESSAGES:
+                with self.subTest(status=status):
+                    data = spectrum([400, 401, 402], [0, 0, 0])
+                    data.update({"intensity_unit": "a.u.", "signal_status": status})
+                    analyzer = PeakAnalyzer(data)
+                    with patch.object(Figure, "savefig", autospec=True) as save:
+                        analyzer.plot_pl_spectrum(directory / "pl.png")
+                    axes = save.call_args.args[0].axes[0]
+                    self.assertEqual(axes.get_ylabel(), "Emission intensity (a.u.)")
+                    np.testing.assert_array_equal(axes.lines[0].get_ydata(), [0, 0, 0])
+                    self.assertEqual(len(axes.collections), 0)
+                    self.assertIsNone(axes.get_legend())
+                    self.assertEqual(len(axes.texts), 0)
+                    with analyzer.export_csv(directory / "pl.csv").open(
+                            newline="", encoding="utf-8") as stream:
+                        rows = list(csv.reader(stream))
+                    self.assertEqual(rows[0], ["wavelength_nm", "intensity [a.u.]"])
+                    np.testing.assert_array_equal(np.asarray(rows[1:], dtype=float)[:, 1], [0, 0, 0])
+                    summary = json.loads(analyzer.export_summary(directory / "pl.json").read_text())
+                    self.assertFalse(summary["has_signal"])
+                    self.assertIsNone(summary["wavelength_nm"])
+                    self.assertIsNone(summary["peak_index"])
+                    self.assertIsNone(summary["fwhm_nm"])
+                    self.assertEqual(summary["signal_status"], status)
+
+    def test_no_signal_status_does_not_excuse_invalid_spectrum_values(self):
+        for intensities, status in (
+            ([0, 0], None), ([0, 0], "calculated"), ([0, 0], "unknown"),
+            ([0, -1], "no_bound_transitions"),
+            ([0, np.nan], "no_bound_transitions"),
+            ([0, np.inf], "no_signal_in_window"),
+        ):
+            with self.subTest(intensities=intensities, status=status):
+                data = spectrum([400, 401], intensities)
+                data.update({"intensity_unit": "a.u.", "signal_status": status})
+                with self.assertRaises(ValueError):
+                    normalize_relative_spectrum(data)
+                with self.assertRaises(ValueError):
+                    PeakAnalyzer(data).find_spectrum_peak()
+
     def test_old_relative_units_use_arbitrary_units_in_all_outputs(self):
         from matplotlib.figure import Figure
 

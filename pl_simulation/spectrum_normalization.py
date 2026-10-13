@@ -15,6 +15,10 @@ NORMALIZATION_KEYS = (
     "normalization_reference_unit",
 )
 _RELATIVE_UNITS = {"a.u.", "relative", "relative/nm", "a.u./nm"}
+NO_SIGNAL_MESSAGES = {
+    "no_bound_transitions": "No bound electron-hole transitions",
+    "no_signal_in_window": "No PL signal in selected range",
+}
 
 
 def normalize_relative_spectrum(spectrum: Mapping[str, Any]) -> dict[str, Any]:
@@ -22,6 +26,7 @@ def normalize_relative_spectrum(spectrum: Mapping[str, Any]) -> dict[str, Any]:
 
     Apply this only after conversion to wavelength. Explicit physical units
     are preserved. Repeated preparation retains the original reference scale.
+    Explicitly reported no-signal results stay zero, without normalization.
     """
     prepared = dict(spectrum)
     unit = prepared.get("intensity_unit")
@@ -33,7 +38,12 @@ def normalize_relative_spectrum(spectrum: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("PL normalization requires finite nonnegative intensities.")
     maximum = float(np.max(intensity))
     if maximum <= 0:
-        raise ValueError("PL normalization requires at least one positive intensity.")
+        if prepared.get("signal_status") not in NO_SIGNAL_MESSAGES:
+            raise ValueError("PL normalization requires at least one positive intensity or an explicit no-signal status.")
+        prepared.update({"intensity": intensity.copy(), "intensity_unit": "a.u."})
+        for key in NORMALIZATION_KEYS:
+            prepared.pop(key, None)
+        return prepared
     reference = maximum
     reference_unit = unit.strip()
     if prepared.get("intensity_normalization") == NORMALIZATION_METHOD:

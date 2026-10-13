@@ -257,8 +257,6 @@ class QuantumWellSimulation:
         hole_threshold = float(min(hole_potential[0], hole_potential[-1]))
         e_bound = electron_candidates < electron_threshold
         h_bound = hole_candidates < hole_threshold
-        if not np.any(e_bound) or not np.any(h_bound):
-            raise ValueError("No bound electron/hole states were found; revise the well, field, or spatial grid.")
         electron_energies = electron_candidates[e_bound]
         electron_waves = electron_waves[e_bound]
         hole_energies = hole_candidates[h_bound]
@@ -267,10 +265,10 @@ class QuantumWellSimulation:
         hole_masses = self._subband_masses(hole_waves, profiles["hole_mass_xy"], dx)
         electron_mu = self.chemical_potential(
             electron_energies, electron_masses, settings.electron_sheet_density_cm2, settings.temperature_k,
-        )
+        ) if electron_energies.size else None
         hole_mu = self.chemical_potential(
             hole_energies, hole_masses, settings.hole_sheet_density_cm2, settings.temperature_k,
-        )
+        ) if hole_energies.size else None
         spectrum_intervals = math.ceil(
             (settings.spectrum_energy_max_ev - settings.spectrum_energy_min_ev) / settings.spectrum_energy_step_ev,
         )
@@ -278,17 +276,31 @@ class QuantumWellSimulation:
             raise ValueError("The requested spectrum exceeds 20000 energy samples.")
         energy = np.linspace(settings.spectrum_energy_min_ev, settings.spectrum_energy_max_ev, spectrum_intervals + 1)
         overlaps = np.abs(electron_waves @ hole_waves.T * dx)**2
-        intensity, transitions, quadrature_nodes = self._spectrum(
-            energy, electron_energies, hole_energies, electron_masses, hole_masses,
-            electron_mu, hole_mu, valence_top, overlaps,
-        )
-        if not np.all(np.isfinite(intensity)) or not np.any(intensity > 0):
-            raise ValueError("No finite PL signal in the selected energy window; revise the window or carrier densities.")
+        if electron_mu is None or hole_mu is None:
+            intensity = np.zeros_like(energy)
+            transitions, quadrature_nodes = [], 0
+            pl_status = "no_bound_transitions"
+            pl_message = "No bound electron-hole transitions in the configured calculation domain."
+        else:
+            intensity, transitions, quadrature_nodes = self._spectrum(
+                energy, electron_energies, hole_energies, electron_masses, hole_masses,
+                electron_mu, hole_mu, valence_top, overlaps,
+            )
+            pl_status = "calculated" if np.any(intensity > 0) else "no_signal_in_window"
+            pl_message = (
+                "" if pl_status == "calculated"
+                else "No bound-state PL signal in the selected energy window."
+            )
+        if not np.all(np.isfinite(intensity)) or np.any(intensity < 0):
+            raise ValueError("The PL calculation produced invalid intensities.")
         density_residuals = {}
         for carrier, mu, energies, masses, density in (
             ("electron", electron_mu, electron_energies, electron_masses, settings.electron_sheet_density_cm2),
             ("hole", hole_mu, hole_energies, hole_masses, settings.hole_sheet_density_cm2),
         ):
+            if mu is None:
+                density_residuals[carrier] = None
+                continue
             difference = self._log_sheet_density(mu, energies, masses, settings.temperature_k) - (math.log(density) - 14.0 * math.log(10.0))
             density_residuals[carrier] = float(math.expm1(difference))
         warnings = []
@@ -297,8 +309,11 @@ class QuantumWellSimulation:
         if int(np.sum(h_bound)) == settings.hole_states:
             warnings.append("All requested hole states are bound; increase hole_states to check omitted subbands.")
         kt = self.BOLTZMANN_EV_K * settings.temperature_k
-        if electron_mu > electron_threshold - 5.0 * kt or hole_mu > hole_threshold - 5.0 * kt:
+        if ((electron_mu is not None and electron_mu > electron_threshold - 5.0 * kt)
+                or (hole_mu is not None and hole_mu > hole_threshold - 5.0 * kt)):
             warnings.append("A chemical potential lies within five kT of a barrier continuum; omitted unbound carriers may matter.")
+        if pl_status != "calculated":
+            warnings.append(pl_message)
         if float(energy[1] - energy[0]) > settings.broadening_ev / 2.0:
             warnings.append("The spectrum sampling is coarse relative to the Gaussian sigma; refine the energy step for peak/FWHM.")
         metadata = {
@@ -306,6 +321,8 @@ class QuantumWellSimulation:
             "energy_reference": profiles.get("metadata", {}).get("energy_reference", "unstrained_GaN_VBM"),
             "energy_intensity_unit": "a.u.",
             "energy_density_axis_unit": "eV",
+            "pl_status": pl_status,
+            "pl_message": pl_message,
             "excitation_model": "prescribed_electron_and_hole_sheet_densities",
             "boundary_condition": "Dirichlet_zero_envelopes_at_outer_barrier_edges",
             "actual_grid_spacing_nm": dx,
@@ -316,7 +333,7 @@ class QuantumWellSimulation:
             "hole_quasiparticle_continuum_threshold_ev": hole_threshold,
             "electron_chemical_potential_ev": electron_mu,
             "hole_quasiparticle_chemical_potential_ev": hole_mu,
-            "hole_valence_quasi_fermi_ev": valence_top - hole_mu,
+            "hole_valence_quasi_fermi_ev": valence_top - hole_mu if hole_mu is not None else None,
             "hole_quasiparticle_energy_reference_ev": valence_top,
             "electron_sheet_density_cm2": float(settings.electron_sheet_density_cm2),
             "hole_sheet_density_cm2": float(settings.hole_sheet_density_cm2),
@@ -332,6 +349,7 @@ class QuantumWellSimulation:
                 "Unstrained scalar electron and decoupled hole effective-mass bands; no multiband valence mixing.",
                 "No self-consistent Poisson, doping, automatic polarization charge, carrier screening, or excitons.",
                 "Only bound subbands are occupied; continuum-carrier capture and recombination are omitted.",
+                "Zero bound-state PL does not imply zero bulk or continuum emission.",
                 "Prescribed sheet densities do not determine laser power, lifetime, nonradiative rates, or absolute PL intensity.",
                 "Outer-barrier thickness, spatial grid, subband counts, and k quadrature require convergence checks.",
             ],

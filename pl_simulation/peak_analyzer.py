@@ -9,7 +9,9 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from .spectrum_normalization import NORMALIZATION_KEYS, normalize_relative_spectrum
+from .spectrum_normalization import (
+    NORMALIZATION_KEYS, NO_SIGNAL_MESSAGES, normalize_relative_spectrum,
+)
 
 
 class PeakAnalyzer:
@@ -34,8 +36,10 @@ class PeakAnalyzer:
             raise ValueError("Spectrum coordinates and intensities must be finite.")
         if np.any(x <= 0) or np.any(np.diff(x) <= 0):
             raise ValueError("Wavelengths must be positive and strictly increasing.")
-        if np.any(y < 0) or not np.any(y > 0):
-            raise ValueError("Emission intensities must be nonnegative with at least one positive value.")
+        if np.any(y < 0):
+            raise ValueError("Emission intensities must be nonnegative.")
+        if not np.any(y > 0) and source.get("signal_status") not in NO_SIGNAL_MESSAGES:
+            raise ValueError("Emission intensities require at least one positive value or an explicit no-signal status.")
         unit = source.get("intensity_unit")
         if not isinstance(unit, str) or not unit.strip():
             raise ValueError("A declared emission intensity unit is required.")
@@ -136,6 +140,8 @@ class PeakAnalyzer:
         reaching a spectrum boundary has an unresolved width.
         """
         x, y, _, _ = self._spectrum(spectrum)
+        if not np.any(y > 0):
+            return None
         index = int(np.argmax(y)) if peak_index is None else peak_index
         if isinstance(index, bool) or not isinstance(index, (int, np.integer)) or not 0 <= index < x.size:
             raise ValueError("peak_index must be an integer inside the spectrum.")
@@ -156,10 +162,22 @@ class PeakAnalyzer:
         return float(right_cross - left_cross)
 
     def find_spectrum_peak(self, spectrum: Mapping[str, Any] | None = None) -> dict[str, Any]:
-        """Report the sampled global wavelength maximum; ties choose the first."""
+        """Report the sampled maximum or an explicit no-signal result."""
         x, y, unit, source = self._spectrum(spectrum)
+        if not np.any(y > 0):
+            status = source["signal_status"]
+            message = source.get("signal_message") or NO_SIGNAL_MESSAGES[status]
+            return {
+                "has_signal": False, "signal_status": status, "reason": status,
+                "signal_message": message,
+                "wavelength_nm": None, "energy_ev": None, "intensity": 0.0,
+                "intensity_unit": unit, "peak_index": None, "fwhm_nm": None,
+                "axis": "wavelength", "axis_unit": "nm", "peak_at_boundary": False,
+                "peak_method": None, "fwhm_method": None,
+            }
         index = int(np.argmax(y))
         peak = {
+            "has_signal": True, "signal_status": "calculated",
             "wavelength_nm": float(x[index]), "energy_ev": self.HC_EV_NM / float(x[index]),
             "intensity": float(y[index]), "intensity_unit": unit, "peak_index": index,
             "fwhm_nm": self.calculate_fwhm(source, index),
@@ -180,12 +198,16 @@ class PeakAnalyzer:
         figure = Figure(figsize=(8, 5), layout="constrained")
         FigureCanvasAgg(figure)
         ax = figure.subplots()
-        ax.plot(x, y, label="Spontaneous emission")
-        ax.scatter([peak["wavelength_nm"]], [peak["intensity"]], color="tab:red", zorder=3)
-        ax.annotate(f"Peak: {peak['wavelength_nm']:.2f} nm", (peak["wavelength_nm"], peak["intensity"]), xytext=(8, 8), textcoords="offset points", fontsize=9)
+        if peak["has_signal"]:
+            ax.plot(x, y, label="Spontaneous emission")
+            ax.scatter([peak["wavelength_nm"]], [peak["intensity"]], color="tab:red", zorder=3)
+            ax.annotate(f"Peak: {peak['wavelength_nm']:.2f} nm", (peak["wavelength_nm"], peak["intensity"]), xytext=(8, 8), textcoords="offset points", fontsize=9)
+            ax.legend()
+        else:
+            ax.plot(x, y)
+            ax.set_ylim(-0.02, 1)
         ax.set(xlabel="Wavelength (nm)", ylabel=f"Emission intensity ({unit})", title="PL emission spectrum")
         ax.grid(alpha=0.2)
-        ax.legend()
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(destination, dpi=180)

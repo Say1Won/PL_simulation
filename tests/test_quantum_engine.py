@@ -116,13 +116,52 @@ class NativeCalculationTests(unittest.TestCase):
         self.assertGreater(np.argmax(emission), 0)
         self.assertLess(np.argmax(emission), len(emission) - 1)
 
-    def test_structure_without_confined_states_is_rejected(self):
+    def test_structure_without_confined_states_returns_empty_states_and_zero_pl(self):
         data = self.structure.to_dict()
         data["layers"][1]["indium_fraction"] = 1e-8
         data["layers"][1]["thickness_nm"] = 0.1
         structure = SingleQWStructure.from_dict(data)
-        with self.assertRaisesRegex(ValueError, "bound|confined"):
-            QuantumWellSimulation(structure, SimulationSettings(), self.materials).run()
+        result = QuantumWellSimulation(structure, SimulationSettings(), self.materials).run()
+        self.assertEqual(result["electron_energies_ev"].size, 0)
+        self.assertEqual(result["valence_energies_ev"].size, 0)
+        self.assertEqual(result["electron_wavefunctions"].shape, (0, len(result["position_nm"])))
+        self.assertEqual(result["hole_wavefunctions"].shape, (0, len(result["position_nm"])))
+        self.assertFalse(np.any(result["energy_intensity"]))
+        self.assertEqual(result["metadata"]["pl_status"], "no_bound_transitions")
+        self.assertIsNone(result["metadata"]["electron_chemical_potential_ev"])
+        self.assertIsNone(result["metadata"]["hole_quasiparticle_chemical_potential_ev"])
+
+    def test_pure_gan_has_flat_bands_and_no_artificial_box_states(self):
+        data = self.structure.to_dict()
+        data["layers"][1]["indium_fraction"] = 0
+        result = QuantumWellSimulation(
+            SingleQWStructure.from_dict(data), SimulationSettings(), self.materials).run()
+        self.assertEqual(np.ptp(result["conduction_ev"]), 0)
+        self.assertEqual(np.ptp(result["valence_ev"]), 0)
+        self.assertEqual(result["electron_energies_ev"].size, 0)
+        self.assertEqual(result["valence_energies_ev"].size, 0)
+        self.assertFalse(np.any(result["energy_intensity"]))
+        self.assertEqual(result["metadata"]["transitions"], [])
+
+    def test_missing_electron_preserves_actual_hole_states_and_zero_pl(self):
+        data = self.structure.to_dict()
+        data["layers"][1].update(indium_fraction=0.005, thickness_nm=2.0)
+        result = QuantumWellSimulation(
+            SingleQWStructure.from_dict(data), SimulationSettings(), self.materials).run()
+        self.assertEqual(result["electron_energies_ev"].size, 0)
+        self.assertEqual(result["valence_energies_ev"].size, 1)
+        self.assertFalse(np.any(result["energy_intensity"]))
+        self.assertIsNone(result["metadata"]["electron_chemical_potential_ev"])
+        self.assertTrue(np.isfinite(result["metadata"]["hole_quasiparticle_chemical_potential_ev"]))
+        self.assertIsNone(result["metadata"]["density_relative_residuals"]["electron"])
+
+    def test_no_signal_in_energy_window_returns_zero_pl_without_discarding_states(self):
+        settings = SimulationSettings(spectrum_energy_min_ev=8, spectrum_energy_max_ev=8.2)
+        result = QuantumWellSimulation(self.structure, settings, self.materials).run()
+        self.assertGreater(result["electron_energies_ev"].size, 0)
+        self.assertGreater(result["valence_energies_ev"].size, 0)
+        self.assertFalse(np.any(result["energy_intensity"]))
+        self.assertEqual(result["metadata"]["pl_status"], "no_signal_in_window")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ from .layer import Layer
 
 @dataclass(frozen=True)
 class SingleQWStructure:
-    """Describe one InGaN well without storing material database values."""
+    """Describe a central InGaN layer, including non-confining compositions."""
 
     layers: tuple[Layer, ...]
 
@@ -20,7 +20,7 @@ class SingleQWStructure:
         self.validate()
 
     def validate(self) -> None:
-        """Require exactly one well between two lower-indium barriers."""
+        """Validate the layer layout without requiring bound states to exist."""
         if len(self.layers) != 3 or not all(isinstance(layer, Layer) for layer in self.layers):
             raise ValueError("Single QW requires exactly three Layer objects.")
         for layer in self.layers:
@@ -30,10 +30,8 @@ class SingleQWStructure:
         if len({layer.name for layer in self.layers}) != 3:
             raise ValueError("Layer names must be unique.")
         well = self.layers[1]
-        if well.material != "InGaN" or well.indium_fraction <= 0:
-            raise ValueError("The well must be InGaN with positive indium_fraction.")
-        if any(layer.indium_fraction >= well.indium_fraction for layer in (self.layers[0], self.layers[2])):
-            raise ValueError("Each barrier must have a lower In fraction than the well.")
+        if well.material != "InGaN":
+            raise ValueError("The central well layer must use the InGaN alloy model.")
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SingleQWStructure":

@@ -51,12 +51,21 @@ class SingleQWBoundaryTests(unittest.TestCase):
         self.assertEqual(ranges[2]["indium_fraction"], 0.05)
         self.assertEqual(ranges[1]["thickness_nm"], 3)
 
-    def test_equal_or_higher_indium_barrier_is_not_a_supported_well(self):
+    def test_equal_or_higher_indium_barrier_can_be_analyzed_without_assuming_confinement(self):
         for fraction in (0.2, 0.3):
             config = structure_data()
             config["layers"][2]["indium_fraction"] = fraction
-            with self.subTest(fraction=fraction), self.assertRaises(ValueError):
-                SingleQWStructure.from_dict(config)
+            with self.subTest(fraction=fraction):
+                structure = SingleQWStructure.from_dict(config)
+                self.assertEqual(structure.layers[2].indium_fraction, fraction)
+
+    def test_central_layer_accepts_both_pure_alloy_endpoints(self):
+        for fraction in (0, 1):
+            config = structure_data()
+            config["layers"][1]["indium_fraction"] = fraction
+            with self.subTest(fraction=fraction):
+                structure = SingleQWStructure.from_dict(config)
+                self.assertEqual(structure.layers[1].indium_fraction, fraction)
 
     def test_multiwell_or_wrong_order_is_rejected_in_singlewell_class(self):
         config = structure_data()

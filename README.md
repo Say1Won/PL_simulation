@@ -4,7 +4,7 @@ Python으로 **Quantum well 밴드·고유준위 그래프**와 **상대 PL 스�
 
 현재 계산은 **c-plane, unstrained 1D 단일 밴드 유효질량 모델**입니다. 전자와 정공의 구속 상태를 직접 풀고, 실제 envelope overlap과 캐리어 점유에서 발광 스펙트럼을 계산합니다. 실험값과 자동으로 일치시키거나 절대 PL 세기를 예측하는 모델은 아닙니다.
 
-**PL 그래프·CSV·요약 JSON은 최대 세기를 1로 정규화한 a.u. 값을 사용합니다.** 원래 계산값은 아카이브에 보관합니다.
+**PL 신호가 있으면 그래프·CSV·요약 JSON은 최대 세기를 1로 정규화한 a.u. 값을 사용합니다.** 구속 상태 전이가 없으면 intensity를 0으로 저장하고 그래프에 0인 직선을 표시합니다. 원래 계산값은 아카이브에 보관합니다.
 
 ## 설치 및 실행
 
@@ -71,11 +71,15 @@ python main.py --help
 ```bash
 python main.py --indium-fraction 0.20
 python main.py --indium-fraction 0.25
+python main.py --indium-fraction 0
+python main.py --indium-fraction 1
 ```
 
-옵션을 생략하면 구조 JSON에 지정한 비율을 사용합니다. 이 옵션만 사용하면 두께와 장벽 설정은 유지하며, 원래 JSON 파일도 수정하지 않습니다. 적용한 비율은 실행별 입력·아카이브·요약 JSON에 기록합니다. 비율은 `0보다 크고 1 이하`이며 양쪽 장벽의 In 비율보다 높아야 합니다. 기존 결과의 조성을 바꿀 수는 없으므로 `--results-dir`와 함께 사용하면 오류를 표시합니다.
+옵션을 생략하면 구조 JSON에 지정한 비율을 사용합니다. 이 옵션만 사용하면 두께와 장벽 설정은 유지하며, 원래 JSON 파일도 수정하지 않습니다. 적용한 비율은 실행별 입력·아카이브·요약 JSON에 기록합니다. 비율은 **`0 이상 1 이하`**입니다. `0`은 In 0%, `1`은 In 100%, `0.005`는 In 0.5%입니다. 장벽과 조성이 같거나 실제 구속 상태가 생기지 않는 조건도 실행할 수 있습니다. 기존 결과의 조성을 바꿀 수는 없으므로 `--results-dir`와 함께 사용하면 오류를 표시합니다.
 
-In 비율을 크게 바꾸어 피크가 계산 범위를 벗어나면 `configs/simulation.json`에서 `spectrum_energy_min_ev`와 `spectrum_energy_max_ev`를 조정하세요. `pl_summary.json`의 `peak_at_boundary`로 범위 경계에 피크가 걸렸는지 확인할 수 있습니다.
+구속 상태가 없는 캐리어의 준위·파동함수는 빈 배열로 저장하며 밴드 그래프에 표시하지 않습니다. 전자나 정공 중 하나라도 구속 상태가 없으면 PL intensity는 모든 파장에서 **0 a.u.**입니다. 그래프에 안내 문구나 피크 표시는 넣지 않습니다. 피크 파장·에너지·FWHM은 `null`, `has_signal`은 `false`로 저장하고, 실행은 정상 완료합니다. 존재하는 정공 또는 전자 상태까지 지우지는 않습니다. 이 값은 현재 구속 상태 전이 모델의 결과이며 벌크 발광 계산은 포함하지 않습니다.
+
+In 비율을 크게 바꾸어 피크가 계산 범위를 벗어나면 `configs/simulation.json`에서 `spectrum_energy_min_ev`와 `spectrum_energy_max_ev`를 조정하세요. `pl_summary.json`의 `peak_at_boundary`로 범위 경계에 피크가 걸렸는지 확인할 수 있습니다. 선택한 범위에 신호가 전혀 없으면 intensity는 0이며 `signal_status`는 `no_signal_in_window`로 기록됩니다.
 
 ## QW 두께를 실행할 때 지정하기
 
@@ -104,7 +108,7 @@ subprocess.run(
 )
 ```
 
-첫 셀은 최신 저장소 코드를 받으며, 계산은 새 Python 프로세스에서 실행합니다. 마지막 셀은 이번에 생성된 QW·PL 그래프와 실제 사용한 In 비율·QW 두께를 표시합니다. PL 최대 세기는 이전과 동일하게 **1.0 a.u.**입니다.
+첫 셀은 최신 저장소 코드를 받으며, 계산은 새 Python 프로세스에서 실행합니다. 마지막 셀은 이번에 생성된 QW·PL 그래프와 실제 사용한 In 비율·QW 두께를 표시합니다. PL 신호가 있으면 최대 세기는 **1.0 a.u.**, 구속 상태 전이가 없으면 **0 a.u.**입니다.
 
 ## 파일 구성과 클래스
 
@@ -145,7 +149,7 @@ PL_simulation/
 
 ## 변경할 설정
 
-`configs/single_qw.json`의 기본 구조는 **GaN 10 nm / In₀.₁₈Ga₀.₈₂N 3 nm / GaN 10 nm**입니다. barrier는 well보다 낮은 In 조성의 InGaN으로도 지정할 수 있습니다.
+`configs/single_qw.json`의 기본 구조는 **GaN 10 nm / In₀.₁₈Ga₀.₈₂N 3 nm / GaN 10 nm**입니다. barrier는 InGaN으로도 지정할 수 있습니다. 구속 상태의 존재 여부는 조성의 대소를 입력 단계에서 제한하지 않고, 계산된 밴드와 에너지 준위로 판정합니다.
 
 `configs/simulation.json`의 `settings`:
 
@@ -203,22 +207,22 @@ outputs/run_001/
 
 `quantum_well.png`에는 밴드와 계산한 전자·valence 전자 고유준위를 함께 표시합니다. 정공 quasiparticle 고유에너지를 valence 전자 에너지로 변환해 같은 기준에서 표시합니다. `--include-wavefunctions`의 세로 크기는 표시용 스케일입니다.
 
-기본 Python 계산의 PL 그래프는 세로축을 **Emission intensity (a.u.)**로 표시하며, 파장 스펙트럼의 세기를 **`I_normalized(λ) = I(λ) / max(I(λ))`**로 계산합니다. 따라서 최대 세기는 **1**입니다. `pl_spectrum.csv`와 `pl_summary.json`도 같은 정규화 값을 사용합니다. **a.u.는 arbitrary units(임의 단위)**입니다.
+기본 Python 계산의 PL 그래프는 세로축을 **Emission intensity (a.u.)**로 표시합니다. 신호가 있으면 파장 스펙트럼의 세기를 **`I_normalized(λ) = I(λ) / max(I(λ))`**로 계산하여 최대 세기를 **1**로 맞춥니다. `pl_spectrum.csv`와 `pl_summary.json`도 같은 값을 사용합니다. 신호가 없으면 정규화하지 않고 **0**을 유지하며 정규화 기준값 metadata를 만들지 않습니다. **a.u.는 arbitrary units(임의 단위)**입니다.
 
-이전에 생성한 스펙트럼이나 외부 데이터의 상대 단위 `relative/nm`도 동일하게 정규화합니다. 각 스펙트럼을 자체 최대값으로 나누므로 피크 위치·FWHM·모양은 유지하지만, In 비율에 따른 전체 발광 세기 차이는 정규화 출력에서 비교할 수 없습니다.
+이전에 생성한 스펙트럼이나 외부 데이터의 상대 단위 `relative/nm`도 신호가 있으면 동일하게 정규화합니다. 각 스펙트럼을 자체 최대값으로 나누므로 피크 위치·FWHM·모양은 유지하지만, In 비율에 따른 전체 발광 세기 차이는 정규화 출력에서 비교할 수 없습니다.
 
 `a.u.` 표기는 다음 InGaN/GaN QW 논문의 PL 그래프를 참고했습니다. 피크를 1로 맞추는 정규화는 이 프로그램의 출력 규칙이며, `a.u.` 표기 자체가 요구하는 규칙은 아닙니다.
 
 - Okamoto et al., *Surface-plasmon-enhanced light emitters based on InGaN quantum wells*, Nature Materials 3, 601–605 (2004), [DOI:10.1038/nmat1198](https://doi.org/10.1038/nmat1198), Fig. 1(b): `PL intensity (a.u.)`와 파장(nm).
 - Li et al., *Room temperature green light emission from nonpolar cubic InGaN/GaN multi-quantum-wells*, Applied Physics Letters 90, 071903 (2007), [DOI:10.1063/1.2475564](https://doi.org/10.1063/1.2475564), Fig. 2: `PL intensity (a.u.)`와 에너지(eV).
 
-파장 변환의 `|dE/dλ|=hc/λ²`를 적용한 **뒤에** 최대 세기로 나눕니다. 요약 JSON의 `intensity_normalization`은 `divide_by_wavelength_maximum`이며, `normalization_reference_intensity`와 `normalization_reference_unit`에 정규화 전 파장 최대값과 단위를 기록합니다. 정규화 값에 이 최대값을 곱하면 정규화 전 세기를 복원할 수 있습니다.
+신호가 있으면 파장 변환의 `|dE/dλ|=hc/λ²`를 적용한 **뒤에** 최대 세기로 나눕니다. 이때 요약 JSON의 `intensity_normalization`은 `divide_by_wavelength_maximum`이며, `normalization_reference_intensity`와 `normalization_reference_unit`에 정규화 전 파장 최대값과 단위를 기록합니다. 정규화 값에 이 최대값을 곱하면 정규화 전 세기를 복원할 수 있습니다. 0인 결과에는 이 정규화 metadata가 없습니다.
 
 아카이브의 원래 `energy_intensity`는 정규화하지 않고 보관하며, 재분석 시 같은 정규화 결과를 생성합니다. `energy_intensity_unit`은 `a.u.`, 에너지 밀도의 기준 좌표는 `energy_density_axis_unit: "eV"`입니다. 외부 데이터에 명시한 물리 단위는 유지합니다.
 
 실험과의 peak·선폭·스펙트럼 모양 비교에는 CSV와 `pl_summary.json`을 사용하세요. 실험의 파장축·에너지축과 밀도 단위를 맞추고, 세기를 정규화했다면 동일한 정규화 방식을 적용하세요. 비교용 외부 solver 실행이나 실험 데이터 자동 fitting은 포함하지 않습니다.
 
-FWHM은 선택된 peak 주변의 연속적인 반치 구간을 선형 보간하며 baseline을 빼지 않습니다. 반치 구간이 계산 범위에서 잘리면 `null`, 전부 0인 데이터는 실패로 처리합니다. 아카이브에는 고유상태·원래 에너지 스펙트럼과 모델·밀도 잔차·재료 출처가 저장됩니다. `.npz`는 pickle을 사용하지 않습니다.
+FWHM은 선택된 peak 주변의 연속적인 반치 구간을 선형 보간하며 baseline을 빼지 않습니다. 반치 구간이 계산 범위에서 잘리면 `null`입니다. 계산에서 신호 없음으로 기록한 결과는 peak·FWHM을 모두 `null`로 저장합니다. 신호 없음 상태가 기록되지 않은 전부 0인 외부 데이터는 임의의 피크를 만들지 않고 거부합니다. 아카이브에는 고유상태·원래 에너지 스펙트럼과 모델·밀도 잔차·재료 출처가 저장됩니다. `.npz`는 pickle을 사용하지 않습니다.
 
 `--prepare-only`는 `inputs/`만 생성합니다. 실패 원인은 해당 실행의 `inputs/run.json`에 기록합니다.
 

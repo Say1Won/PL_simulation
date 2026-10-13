@@ -167,25 +167,72 @@ class CommandLineIntegrationTests(unittest.TestCase):
             self.assertEqual(structure_path.read_bytes(), original_bytes)
 
     def test_invalid_indium_fractions_fail_before_allocating_outputs(self):
-        for fraction in ("0", "-0.1", "1.1", "25", "nan", "inf", "-inf"):
+        for fraction in ("-0.1", "1.1", "25", "nan", "inf", "-inf"):
             with self.subTest(fraction=fraction):
                 completed = self.invoke(f"--indium-fraction={fraction}", "--prepare-only")
                 self.assertEqual(completed.returncode, 1, completed.stderr)
                 self.assertIn("indium_fraction", completed.stderr)
                 self.assertFalse(self.output_root.exists())
 
-    def test_indium_fraction_override_must_exceed_the_barrier_composition(self):
+    def test_indium_fraction_override_accepts_nonconfining_compositions(self):
         structure = json.loads((ROOT / "configs/single_qw.json").read_text())
         structure["layers"][0].update(material="InGaN", indium_fraction=0.10)
         structure_path = self.directory / "alloy_barrier.json"
         structure_path.write_text(json.dumps(structure))
-        for fraction in (0.10, 0.05):
+        for fraction in (0, 0.10, 0.05):
             with self.subTest(fraction=fraction):
                 completed = self.invoke("--structure", str(structure_path),
                                         "--indium-fraction", str(fraction), "--prepare-only")
-                self.assertEqual(completed.returncode, 1, completed.stderr)
-                self.assertIn("lower In fraction", completed.stderr)
-                self.assertFalse(self.output_root.exists())
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_zero_indium_runs_and_reloads_with_zero_pl_and_no_peak(self):
+        completed = self.invoke("--indium-fraction", "0", "--include-wavefunctions")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("PL intensity: 0 a.u.; peak: none", completed.stdout)
+        summary = self.load_summary()
+        self.assertFalse(summary["has_signal"])
+        self.assertEqual(summary["signal_status"], "no_bound_transitions")
+        self.assertEqual(summary["intensity"], 0)
+        self.assertEqual(summary["intensity_unit"], "a.u.")
+        for name in ("wavelength_nm", "energy_ev", "peak_index", "fwhm_nm"):
+            self.assertIsNone(summary[name])
+        self.assertNotIn("intensity_normalization", summary)
+        run = self.output_root / "run_001"
+        manifest = json.loads((run / "inputs/run.json").read_text())
+        self.assertEqual(manifest["status"], "completed")
+        with np.load(run / "calculation/result.npz", allow_pickle=False) as archive:
+            self.assertEqual(archive["electron_energies_ev"].size, 0)
+            self.assertEqual(archive["valence_energies_ev"].size, 0)
+            self.assertFalse(np.any(archive["energy_intensity"]))
+        with (run / "analysis/pl_spectrum.csv").open(newline="") as stream:
+            rows = list(csv.reader(stream))
+        self.assertEqual(rows[0][1], "intensity [a.u.]")
+        self.assertTrue(all(float(row[1]) == 0 for row in rows[1:]))
+        for name in ("quantum_well.png", "pl_spectrum.png"):
+            self.assertTrue((run / "figures" / name).is_file())
+        reload = self.invoke("--results-dir", str(run / "calculation"))
+        self.assertEqual(reload.returncode, 0, reload.stderr)
+        self.assertEqual(self.load_summary(2)["intensity"], 0)
+        self.assertIsNone(self.load_summary(2)["wavelength_nm"])
+        self.assertEqual((run / "analysis/pl_spectrum.csv").read_bytes(),
+                         (self.output_root / "run_002/analysis/pl_spectrum.csv").read_bytes())
+
+    def test_user_thin_dilute_case_keeps_hole_states_and_returns_zero_pl(self):
+        completed = self.invoke("--indium-fraction", "0.005", "--well-thickness-nm", "2")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        summary = self.load_summary()
+        metadata = summary["calculation_metadata"]
+        self.assertEqual(metadata["bound_electron_states"], 0)
+        self.assertEqual(metadata["bound_hole_states"], 1)
+        self.assertEqual(summary["intensity"], 0)
+        self.assertIsNone(summary["wavelength_nm"])
+
+    def test_pure_inn_endpoint_runs_and_saves_fraction_one(self):
+        completed = self.invoke("--indium-fraction", "1")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        summary = self.load_summary()
+        self.assertEqual(summary["calculation_metadata"]["structure"]["layers"][1]["indium_fraction"], 1)
+        self.assertEqual(summary["intensity_unit"], "a.u.")
 
     def test_indium_fraction_cannot_override_archived_results(self):
         completed = self.invoke("--indium-fraction", "0.25", "--results-dir", str(self.directory))
